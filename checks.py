@@ -29,6 +29,10 @@ class EngineTests(unittest.TestCase):
         env = patch.dict(os.environ,{'WATER_MONITOR_DB':str(self.db_path)})
         env.start()
         self.addCleanup(env.stop)
+        self.fixed_now = datetime(2026,11,16,2,0,tzinfo=LOCAL_TZ)
+        clock = patch('engine.local_now',return_value=self.fixed_now)
+        clock.start()
+        self.addCleanup(clock.stop)
 
     def test_other_window_resolution_survives_stale_saves_and_audit_appends(self):
         sim = new_simulation()
@@ -294,7 +298,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(app.radio[0].value,'live')
         self.assertTrue(next(b for b in app.button if b.label=='+15 minutes').disabled)
         sim = app.session_state['simulation']
-        now = datetime.now(LOCAL_TZ)
+        now = self.fixed_now
         self.assertEqual(sim['minute'],now.hour*60+now.minute)
 
     def test_features_do_not_see_future(self):
@@ -405,6 +409,44 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(sim['running'])
         advance(sim,BUNDLE,15)
         self.assertEqual(sim['minute'],1439)
+
+    def test_all_fifteen_alerts_are_accessible_across_pages(self):
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        app.radio[0].set_value('demo').run()
+        sim = app.session_state['simulation']
+        for apt in APARTMENTS:
+            set_mode(sim,apt,'leak')
+        advance(sim,BUNDLE,60); app.run()
+        self.assertFalse(app.exception)
+        seen = set()
+        for page in (1,2,3):
+            app.selectbox(key='alert_page').set_value(page).run()
+            self.assertFalse(app.exception)
+            keys = {b.key for b in app.button if (b.key or '').startswith('ack_')}
+            self.assertEqual(len(keys),5)
+            seen.update(keys)
+        self.assertEqual(seen,{f'ack_{i}' for i in range(1,16)})
+        # Acknowledging an early incident does not change its page position.
+        app.selectbox(key='alert_page').set_value(1).run()
+        app.button(key='ack_1').click().run()
+        app.text_input(key='note_1').input('Keep this draft when changing pages').run()
+        app.selectbox(key='out_1').set_value('unknown').run()
+        app.selectbox(key='alert_page').set_value(3).run()
+        app.selectbox(key='alert_page').set_value(1).run()
+        self.assertEqual(app.text_input(key='note_1').value,'Keep this draft when changing pages')
+        self.assertEqual(app.selectbox(key='out_1').value,'unknown')
+        app.button(key='done_1').click().run()
+        self.assertEqual(sim['events'][0]['status'],'resolved')
+        # Shrinking the list while on the last page must not leave an invalid page.
+        app.selectbox(key='alert_page').set_value(3).run()
+        for event in sim['events'][1:6]:
+            update_event(sim,event['id'],'resolve','leak_fixed')
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(app.selectbox(key='alert_page').value,2)
+        app.selectbox(key='language').set_value('uz').run()
+        self.assertEqual(app.selectbox(key='alert_page').label,'Ogohlantirishlar sahifasi')
+        self.assertEqual(app.selectbox(key='alert_page').value,2)
 
     def test_ui_startup_step_and_reset(self):
         app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()

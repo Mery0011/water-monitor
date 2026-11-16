@@ -12,6 +12,7 @@ A local portfolio prototype that flags unusual apartment water usage for securit
 - An accelerated demo with manual steps and automatic playback.
 - Leak, 15-minute shower, normal usage, and sensor disconnection scenarios.
 - Apartment status cards, flow charts, optional alert sounds, and incident history.
+- All pending alerts are accessible through five-item pages, ordered oldest first. Pages adjust automatically after incidents are resolved; inspection drafts survive page changes within the session.
 - Acknowledge and resolve actions, staff notes, and CSV exports.
 - A local owner directory with editable contacts and phone/email links from apartment and incident panels.
 - A local SQLite archive that retains incidents, outcomes, notes, and activity across resets and app restarts.

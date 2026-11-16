@@ -144,6 +144,12 @@ def owner_contact(apartment,key,event=None,editable=False):
                         st.rerun()
 
 
+def remember_inspection_draft(event_id,field,widget_key):
+    sim = st.session_state['simulation']
+    draft = sim.setdefault('inspection_drafts',{}).setdefault(event_id,{})
+    draft[field] = st.session_state[widget_key]
+
+
 @st.fragment(run_every='2s')
 def monitor():
     sim = st.session_state['simulation']
@@ -236,7 +242,21 @@ def monitor():
         st.subheader(t('Alerts'))
         st.caption(t('{count} unresolved incidents',count=len(pending)))
         if not pending: st.success(t('No incidents waiting for inspection.'))
-        for event in reversed(pending[-12:]):
+        # Oldest first: new alerts do not move an existing incident to a
+        # different page. Every pending incident remains reachable.
+        ordered = sorted(pending,key=lambda event:event['id'])
+        page_size = 5
+        page_count = max(1,(len(ordered)+page_size-1)//page_size)
+        page = max(1,min(st.session_state.get('alert_page',1),page_count))
+        st.session_state['alert_page'] = page
+        if page_count>1:
+            page = st.selectbox(t('Alert page'),list(range(1,page_count+1)),key='alert_page',
+                format_func=lambda n:t('Page {page} of {total}',page=n,total=page_count))
+        start = (page-1)*page_size
+        if ordered:
+            st.caption(t('Showing {first}–{last} of {total} alerts · oldest first',
+                first=start+1,last=min(start+page_size,len(ordered)),total=len(ordered)))
+        for event in ordered[start:start+page_size]:
             with st.container(border=True):
                 st.markdown(f"**#{event['id']} • "+t('Apartment {apt}',apt=event['apartment'])+'**')
                 st.warning(t('Offline' if event['kind']=='offline' else 'Possible water leak'))
@@ -261,8 +281,13 @@ def monitor():
                     outcome_key = f"out_{event['id']}"
                     if outcome_key in st.session_state and st.session_state[outcome_key] not in options:
                         del st.session_state[outcome_key]
-                    outcome = st.selectbox(t('Outcome'),options,format_func=outcome_label,key=outcome_key)
-                    note = st.text_input(t('Staff note'),key=f"note_{event['id']}",max_chars=1000)
+                    draft = sim.setdefault('inspection_drafts',{}).get(event['id'],{})
+                    outcome = st.selectbox(t('Outcome'),options,format_func=outcome_label,key=outcome_key,
+                        index=options.index(draft.get('outcome')) if draft.get('outcome') in options else 0,
+                        on_change=remember_inspection_draft,args=(event['id'],'outcome',outcome_key))
+                    note_key = f"note_{event['id']}"
+                    note = st.text_input(t('Staff note'),key=note_key,max_chars=1000,value=draft.get('note',''),
+                        on_change=remember_inspection_draft,args=(event['id'],'note',note_key))
                     if st.button(t('Resolve'),key=f"done_{event['id']}"):
                         if live: sync_live(sim,bundle,force=True)
                         update_event(sim,event['id'],'resolve',outcome,note); persist_current(); st.rerun()
