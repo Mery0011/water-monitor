@@ -10,13 +10,15 @@ A local web dashboard monitors minute-by-minute synthetic water readings from 15
 
 Staff can acknowledge an alert, record an inspection outcome and notes, resolve the incident, and export its history as CSV. Sensor disconnection is tracked separately from water incidents. Resolving an active water incident also stops the simulated leak; it does not control a real valve.
 
+Staff can view owner contacts from apartment and incident panels. Fictional sample contacts have disabled actions; configured contacts can open a phone handler or a prefilled email draft. Calls and messages are never sent automatically.
+
 The interface defaults to English and supports Korean and Uzbek. Live-time mode follows Asia/Seoul time (UTC+9), while accelerated mode supports a short interview demonstration. All readings in both modes are synthetic.
 
 ## Technology and implementation
 
 Python, scikit-learn, pandas, NumPy, Altair, and Streamlit. The Isolation Forest model was trained on normal synthetic household-days, with separate validation and test days. Features use current and historical readings without looking ahead. The model runs locally without a paid AI API.
 
-The project includes synthetic telemetry generation, model training and evaluation, a multilingual dashboard, incident state management, CSV reports, a persistent SQLite incident archive, and automated regression checks.
+The project includes synthetic telemetry generation, model training and evaluation, a multilingual dashboard, incident state management, CSV reports, a persistent SQLite incident archive, an editable local owner directory with phone/email links, and automated regression checks.
 
 ## Results and lessons
 

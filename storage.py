@@ -28,6 +28,14 @@ def connection(path=None):
         db.execute('PRAGMA foreign_keys=ON')
         db.execute('PRAGMA journal_mode=WAL')
         db.executescript('''
+            CREATE TABLE IF NOT EXISTS contacts (
+                apartment TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                email TEXT NOT NULL,
+                is_demo INTEGER NOT NULL CHECK(is_demo IN (0,1)),
+                updated_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS runs (
                 id TEXT PRIMARY KEY,
                 mode TEXT NOT NULL,

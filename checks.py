@@ -11,6 +11,8 @@ import joblib
 import numpy as np
 import pandas as pd
 from streamlit.testing.v1 import AppTest
+from contacts import get_contact, save_contact, contact_links
+from urllib.parse import urlparse, parse_qs
 from storage import save_simulation, load_incidents, load_activity, update_saved_incident
 from engine import make_day, features, new_simulation, advance, set_mode, update_event, new_live, sync_live, LOCAL_TZ, APARTMENTS, ensure_apartments
 
@@ -90,6 +92,43 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(reopened.exception)
         self.assertEqual(load_incidents()[0]['status'],'resolved')
         self.assertEqual(load_incidents()[0]['note'],'Restart inspection')
+
+    def test_owner_contacts_persist_and_demo_actions_are_disabled(self):
+        sample = get_contact('15')
+        self.assertTrue(sample['is_demo'])
+        self.assertEqual(contact_links(sample,'Test','Body'),(None,None))
+        save_contact('15','Owner 이름','+1 (202) 555-0199','owner@example.invalid',is_demo=False)
+        saved = get_contact('15')
+        self.assertEqual(saved['name'],'Owner 이름')
+        self.assertEqual(saved['phone'],'+12025550199')
+        call,mail = contact_links(saved,'점검 & inspection','Apartment 15\nPlease call security.')
+        self.assertEqual(call,'tel:+12025550199')
+        parsed = parse_qs(urlparse(mail).query)
+        self.assertEqual(parsed['subject'],['점검 & inspection'])
+        self.assertEqual(parsed['body'],['Apartment 15\nPlease call security.'])
+        self.assertTrue(get_contact('01')['is_demo'])
+        with self.assertRaises(ValueError):
+            save_contact('15','Owner','bad-number','owner@example.invalid',is_demo=False)
+        with self.assertRaises(ValueError):
+            save_contact('15','Owner','','owner@example.invalid\r\nBcc: bad@example.invalid',is_demo=False)
+        self.assertEqual(get_contact('15')['name'],'Owner 이름')
+
+    def test_ui_owner_contact_form_saves_and_survives_reset(self):
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        self.assertFalse(app.exception)
+        app.text_input(key='owner_03_name').input('Test Owner')
+        app.text_input(key='owner_03_phone').input('+12025550199')
+        app.text_input(key='owner_03_email').input('owner@example.invalid')
+        app.checkbox(key='owner_03_demo').uncheck()
+        next(b for b in app.button if b.label=='Save contact').click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(get_contact('03')['name'],'Test Owner')
+        self.assertFalse(get_contact('03')['is_demo'])
+        app.button(key='reset').click().run()
+        self.assertEqual(get_contact('03')['name'],'Test Owner')
+        app.selectbox(key='language').set_value('uz').run()
+        self.assertFalse(app.exception)
+        self.assertEqual(app.text_input(key='owner_03_name').label,'Xonadon egasining ismi')
 
     def test_fifteen_apartments_and_existing_session_upgrade(self):
         sim = new_simulation()

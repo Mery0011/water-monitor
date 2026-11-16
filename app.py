@@ -15,6 +15,7 @@ from engine import APARTMENTS, new_simulation, new_live, sync_live, local_now, a
 from i18n import translate, OUTCOMES
 from storage import save_simulation, load_incidents, update_saved_incident
 from engine import LOCAL_TZ
+from contacts import get_contact, save_contact, contact_links
 
 ROOT = Path(__file__).resolve().parent
 language = st.session_state.get('language', 'en')
@@ -98,6 +99,48 @@ def alarm():
         wav.writeframes(b''.join(struct.pack('<h',int(7000*math.sin(2*math.pi*700*i/16000))) for i in range(4800)))
     return data.getvalue()
 
+def owner_contact(apartment,key,event=None,editable=False):
+    with st.expander(t('Contact owner')):
+        try:
+            contact = get_contact(apartment)
+        except (OSError,sqlite3.Error):
+            st.error(t('Could not load owner contact. Check database permissions.')); return
+        name = t('Demo resident {apt}',apt=apartment) if contact['is_demo'] else contact['name']
+        st.text(t('Owner: {name}',name=name))
+        st.text(t('Phone: {phone}',phone=contact['phone'] or '—'))
+        st.text(t('Email: {email}',email=contact['email'] or '—'))
+        if contact['is_demo']:
+            st.info(t('Sample contact only. Calling and email are disabled. Edit the apartment contact to use your own details.'))
+        subject = t('Water inspection — Apartment {apt}',apt=apartment)
+        body = (t('Hello, building security would like to check unusual water usage in Apartment {apt}. Please contact the security desk.',apt=apartment)
+                if event is None or event['kind']=='water' else
+                t('Hello, the water meter connection in Apartment {apt} needs checking. Please contact the security desk.',apt=apartment))
+        if event:
+            body += '\n'+t('Incident #{id}, detected at {time}.',id=event['id'],time=clock_label(event['start']))
+        call,mail = contact_links(contact,subject,body)
+        a,b = st.columns(2)
+        a.link_button(t('Call owner'),call or 'tel:',disabled=call is None,width='stretch')
+        b.link_button(t('Draft email'),mail or 'mailto:',disabled=mail is None,width='stretch')
+        st.caption(t('Opens your phone or email application. Nothing is sent automatically.'))
+        st.text(body)
+        if editable:
+            with st.form(key+'_edit'):
+                st.caption(t('Owner contacts are saved locally in SQLite and excluded from GitHub.'))
+                owner_name = st.text_input(t('Owner name'),value=contact['name'],max_chars=80,key=key+'_name')
+                phone = st.text_input(t('Phone number'),value=contact['phone'],max_chars=30,key=key+'_phone')
+                email = st.text_input(t('Email address'),value=contact['email'],max_chars=254,key=key+'_email')
+                demo = st.checkbox(t('Sample contact (disable calling and email)'),value=bool(contact['is_demo']),key=key+'_demo')
+                if st.form_submit_button(t('Save contact')):
+                    try:
+                        save_contact(apartment,owner_name,phone,email,is_demo=demo)
+                    except ValueError:
+                        st.error(t('Enter an owner name and valid phone/email, or leave unused contact fields blank.'))
+                    except (OSError,sqlite3.Error):
+                        st.error(t('Could not save owner contact. Check database permissions.'))
+                    else:
+                        st.rerun()
+
+
 @st.fragment(run_every='2s')
 def monitor():
     sim = st.session_state['simulation']
@@ -150,6 +193,7 @@ def monitor():
     with left:
         apt = st.selectbox(t('Select apartment'),APARTMENTS,index=2,key='chosen_apartment')
         st.caption(t('Current scenario: {scenario}',scenario=t(SCENARIOS[sim['modes'][apt]])))
+        owner_contact(apt,'owner_'+apt,editable=True)
         chart_slot = st.container()
         controls = st.columns(2)
         for column,label,value in [(0,'💧 Start leak','leak'),(1,'🚿 Shower — 15 minutes','shower'),
@@ -196,6 +240,7 @@ def monitor():
                 if event['kind']=='water':
                     st.write(t('At detection: {minutes} minutes of continuous flow, {flow} L/min.',
                         minutes=event['duration'],flow=f"{event['flow']:.2f}"))
+                owner_contact(event['apartment'],f"contact_{event['id']}",event=event)
                 if event['status']=='new':
                     if st.button(t('Acknowledge'),key=f"ack_{event['id']}",width='stretch'):
                         update_event(sim,event['id'],'ack'); persist_current(); st.rerun()
@@ -274,6 +319,7 @@ def monitor():
             event = choices[chosen]
             st.caption(t('Last known signal only. Completing this inspection does not change the current simulation.'))
             prefix = f"saved_{event['run_id']}_{event['id']}"
+            owner_contact(event['apartment'],prefix+'_contact',event=event)
             if event['status']=='new' and st.button(t('Acknowledge'),key=prefix+'_ack'):
                 try:
                     update_saved_incident(event['run_id'],event['id'],'ack')

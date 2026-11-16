@@ -13,6 +13,7 @@ A local portfolio prototype that flags unusual apartment water usage for securit
 - Leak, 15-minute shower, normal usage, and sensor disconnection scenarios.
 - Apartment status cards, flow charts, optional alert sounds, and incident history.
 - Acknowledge and resolve actions, staff notes, and CSV exports.
+- A local owner directory with editable contacts and phone/email links from apartment and incident panels.
 - A local SQLite archive that retains incidents, outcomes, notes, and activity across resets and app restarts.
 - English by default, with Korean and Uzbek available through **Language / 언어 / Til**. Switching languages preserves the current session and staff notes.
 - Comparison of the AI-assisted detector against simple 20- and 60-minute rules.
@@ -51,6 +52,14 @@ Select **Accelerated demo** first. The default **Live time** mode follows the re
 In accelerated autoplay, two seconds represent five virtual minutes. Every virtual minute is processed by the detector. The demo stops at 23:59; **Reset demo** starts a new session. Live-time monitoring continues across midnight.
 
 A flat line at zero means no water is flowing. A paused demo updates only after autoplay starts or a manual step is taken. Alert sound is optional and may be blocked by browser autoplay settings.
+
+## Contacting an apartment owner
+
+Select an apartment and open **Contact owner**. All 15 apartments initially use clearly marked fictional contacts: example email addresses and reserved fictional telephone numbers. Calling and email buttons are disabled for sample contacts.
+
+To use your own contact, edit the owner name, phone number and/or email, clear **Sample contact (disable calling and email)**, and click **Save contact**. Contacts are saved in the same local SQLite database as incidents and remain after demo resets or app restarts. The database is excluded from GitHub. Unused phone/email fields may be left blank; their corresponding buttons remain disabled.
+
+**Call owner** opens the device's phone handler. **Draft email** opens the default email application with a localized subject and message; incident panels include the incident number and detection time. The application does not place calls or send emails automatically and does not claim that the owner has been reached. These actions require a configured phone/email application. Saved historical incidents use the apartment's current directory contact.
 
 ## Model and evaluation
 
@@ -101,7 +110,7 @@ From the repository root, after installing dependencies:
 .venv/bin/python checks.py
 ```
 
-Checks cover causal features, missing readings, short showers, incident creation and resolution, duplicate suppression, subsequent incidents, day boundaries, live time, Streamlit interactions, language switching without losing incident state or notes, SQLite round trips, unique session IDs, repeated saves, save failures, and completing saved inspections after a fresh browser session.
+Checks cover causal features, missing readings, short showers, incident creation and resolution, duplicate suppression, subsequent incidents, day boundaries, live time, Streamlit interactions, language switching without losing incident state or notes, SQLite round trips, unique session IDs, repeated saves, save failures, and completing saved inspections after a fresh browser session, contact persistence, disabled sample-contact actions, and safe email-link encoding.
 
 ## Project files
 
@@ -109,7 +118,8 @@ Checks cover causal features, missing readings, short showers, incident creation
 |---|---|
 | `app.py` | Streamlit security dashboard |
 | `engine.py` | Synthetic telemetry, features, detection, and incident state |
-| `storage.py` | SQLite incident persistence and archived inspection updates |
+| `storage.py` | SQLite schema, incident persistence, and archived inspection updates |
+| `contacts.py` | Owner directory, contact validation, and phone/email link generation |
 | `data/water-monitor.sqlite3` | Local incident database, created automatically and excluded from Git |
 | `train.py` | Training, validation, and test evaluation |
 | `i18n.py` | English, Korean, and Uzbek interface translations |
