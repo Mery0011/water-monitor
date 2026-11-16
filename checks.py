@@ -2,6 +2,7 @@
 from pathlib import Path
 from datetime import datetime, timedelta
 import unittest
+from copy import deepcopy
 import os
 import sqlite3
 import tempfile
@@ -28,6 +29,71 @@ class EngineTests(unittest.TestCase):
         env = patch.dict(os.environ,{'WATER_MONITOR_DB':str(self.db_path)})
         env.start()
         self.addCleanup(env.stop)
+
+    def test_other_window_resolution_survives_stale_saves_and_audit_appends(self):
+        sim = new_simulation()
+        set_mode(sim,'03','leak'); advance(sim,BUNDLE,60)
+        run_id = save_simulation(sim)
+        update_saved_incident(run_id,1,'resolve','leak_fixed','Resolved in window B')
+        # Even an unchanged local snapshot must synchronize remote edits.
+        save_simulation(sim)
+        self.assertEqual(sim['events'][0]['status'],'resolved')
+        self.assertEqual(sim['events'][0]['note'],'Resolved in window B')
+        set_mode(sim,'04','shower'); save_simulation(sim)
+        self.assertEqual(load_incidents()[0]['note'],'Resolved in window B')
+        history = load_activity()
+        self.assertTrue(any(h.get('source')=='archive' and h.get('action')=='resolve' for h in history))
+        self.assertTrue(any(h.get('type')=='scenario' and h.get('apartment')=='04' for h in history))
+        before = len(history)
+        save_simulation(sim)
+        self.assertEqual(len(load_activity()),before)
+
+    def test_conflicting_resolutions_keep_first_saved_note(self):
+        sim = new_simulation()
+        set_mode(sim,'03','leak'); advance(sim,BUNDLE,60)
+        save_simulation(sim)
+        other = deepcopy(sim)
+        update_event(other,1,'resolve','leak_fixed','First saved note')
+        save_simulation(other)
+        update_event(sim,1,'resolve','unknown','Stale conflicting note')
+        save_simulation(sim)
+        self.assertEqual(sim['_workflow_conflicts'],[1])
+        self.assertEqual(sim['events'][0]['note'],'First saved note')
+        self.assertEqual(load_incidents()[0]['note'],'First saved note')
+        # The rejected action must never reappear as a successful audit entry.
+        save_simulation(sim)
+        self.assertFalse(any(h.get('note')=='Stale conflicting note' for h in load_activity()))
+
+    def test_two_browser_windows_keep_completed_inspection(self):
+        first = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        first.radio[0].set_value('demo').run()
+        first.button(key='scenario_leak').click().run()
+        advance(first.session_state['simulation'],BUNDLE,60); first.run()
+        run_id = first.session_state['simulation']['_run_id']
+        second = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        prefix = f'saved_{run_id}_1'
+        second.text_input(key=prefix+'_note').input('Completed in the second window').run()
+        second.button(key=prefix+'_resolve').click().run()
+        self.assertFalse(second.exception)
+        first.run()
+        self.assertFalse(first.exception)
+        event = first.session_state['simulation']['events'][0]
+        self.assertEqual(event['status'],'resolved')
+        self.assertEqual(event['note'],'Completed in the second window')
+        persisted = next(e for e in load_incidents() if e['run_id']==run_id)
+        self.assertEqual(persisted['note'],'Completed in the second window')
+
+    def test_legacy_database_activity_is_migrated_once(self):
+        with closing(sqlite3.connect(self.db_path)) as db:
+            db.executescript("""CREATE TABLE runs(id TEXT PRIMARY KEY,mode TEXT,created_at TEXT);
+                CREATE TABLE activity(run_id TEXT,sequence INTEGER,payload TEXT,PRIMARY KEY(run_id,sequence));
+                INSERT INTO runs VALUES('legacy','demo','2026-11-16');
+                INSERT INTO activity VALUES('legacy',0,'{"type":"scenario","apartment":"03","mode":"leak"}');
+                INSERT INTO activity VALUES('legacy',1,'{"type":"event","source":"archive","action":"ack"}');
+            """)
+            db.commit()
+        self.assertEqual(len(load_activity()),2)
+        self.assertEqual(len(load_activity()),2)
 
     def test_database_round_trip_and_separate_runs(self):
         sim = new_simulation()

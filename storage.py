@@ -2,7 +2,6 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-import hashlib
 import json
 import os
 import sqlite3
@@ -48,6 +47,14 @@ def connection(path=None):
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY(run_id,local_id)
             );
+            CREATE TABLE IF NOT EXISTS activity_stream (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL REFERENCES runs(id),
+                source TEXT NOT NULL,
+                source_sequence INTEGER NOT NULL,
+                payload TEXT NOT NULL,
+                UNIQUE(run_id,source,source_sequence)
+            );
             CREATE TABLE IF NOT EXISTS activity (
                 run_id TEXT NOT NULL REFERENCES runs(id),
                 sequence INTEGER NOT NULL,
@@ -55,40 +62,80 @@ def connection(path=None):
                 PRIMARY KEY(run_id,sequence)
             );
         ''')
+        # Import the old audit table without mixing simulation and archive
+        # sequence numbers. Existing databases need no destructive migration.
+        db.execute("""INSERT OR IGNORE INTO activity_stream
+            (run_id,source,source_sequence,payload)
+            SELECT run_id,CASE WHEN json_extract(payload,'$.source')='archive'
+                THEN 'archive' ELSE 'simulation' END,sequence,payload
+            FROM activity ORDER BY rowid""")
+        db.commit()
         with db:
             yield db
     finally:
         db.close()
 
 
-def save_simulation(sim,path=None):
-    """Save a full incident snapshot atomically; repeated calls are idempotent.
+WORKFLOW_FIELDS = ('status','outcome','note')
 
-    Each demo reset/time-mode change gets a separate run ID, so local incident
-    #1 in one run can never overwrite local incident #1 in another run.
+
+def workflow(event):
+    return {key:event[key] for key in WORKFLOW_FIELDS}
+
+
+def save_simulation(sim,path=None):
+    """Merge telemetry with version-checked workflow under a write lock.
+
+    Compare each workflow against the last value this window saved/read. If
+    another window changed it, that saved version wins over a stale snapshot.
+    Reconcile the local view after commit, even if there were no local changes.
     """
     run_id = sim.setdefault('_run_id',uuid.uuid4().hex)
     created = sim.setdefault('_created_at',utc_now())
-    payload = json.dumps({'events':sim['events'],'history':sim['history']},ensure_ascii=False,sort_keys=True)
-    digest = hashlib.sha256(payload.encode()).hexdigest()
-    target = Path(path) if path else database_path()
-    if sim.get('_saved_digest') == digest and sim.get('_saved_path') == str(target) and target.exists():
-        return run_id
-    now = utc_now()
-    with connection(target) as db:
+    baseline = sim.get('_saved_workflows',{})
+    reconciled,conflicts = {},[]
+    rejected = set(sim.get('_rejected_history',[]))
+    with connection(path) as db:
+        db.execute('BEGIN IMMEDIATE')
         db.execute('INSERT OR IGNORE INTO runs VALUES(?,?,?)',
                    (run_id,'live' if sim.get('live') else 'demo',created))
         for event in sim['events']:
-            db.execute('''INSERT INTO incidents VALUES(?,?,?,?)
-                ON CONFLICT(run_id,local_id) DO UPDATE SET
-                payload=excluded.payload,updated_at=excluded.updated_at''',
-                (run_id,event['id'],json.dumps(event,ensure_ascii=False),now))
+            row = db.execute('SELECT payload FROM incidents WHERE run_id=? AND local_id=?',
+                             (run_id,event['id'])).fetchone()
+            merged = dict(event)
+            if row:
+                remote = workflow(json.loads(row['payload']))
+                local = workflow(event)
+                previous = baseline.get(event['id'])
+                if remote != previous:
+                    merged.update(remote)
+                    if previous is not None and local != previous and local != remote:
+                        conflicts.append(event['id'])
+            reconciled[event['id']] = workflow(merged)
+            encoded = json.dumps(merged,ensure_ascii=False)
+            if row is None:
+                db.execute('INSERT INTO incidents VALUES(?,?,?,?)',
+                           (run_id,event['id'],encoded,utc_now()))
+            elif encoded != row['payload']:
+                db.execute('UPDATE incidents SET payload=?,updated_at=? WHERE run_id=? AND local_id=?',
+                           (encoded,utc_now(),run_id,event['id']))
         for seq,entry in enumerate(sim['history']):
-            db.execute('INSERT OR IGNORE INTO activity VALUES(?,?,?)',
-                       (run_id,seq,json.dumps(entry,ensure_ascii=False)))
-    # Only mark saved after the transaction commits successfully.
-    sim['_saved_digest'] = digest
-    sim['_saved_path'] = str(target)
+            # A losing workflow action must not be recorded as successful.
+            if entry.get('type')=='event' and entry.get('event_id') in conflicts:
+                recorded = db.execute("SELECT 1 FROM activity_stream WHERE run_id=? AND source='simulation' AND source_sequence=?",
+                                      (run_id,seq)).fetchone()
+                if not recorded:
+                    rejected.add(seq)
+            if seq in rejected:
+                continue
+            db.execute("""INSERT OR IGNORE INTO activity_stream
+                (run_id,source,source_sequence,payload) VALUES(?,?,?,?)""",
+                (run_id,'simulation',seq,json.dumps(entry,ensure_ascii=False)))
+    for event in sim['events']:
+        event.update(reconciled[event['id']])
+    sim['_saved_workflows'] = reconciled
+    sim['_workflow_conflicts'] = conflicts
+    sim['_rejected_history'] = sorted(rejected)
     return run_id
 
 
@@ -108,7 +155,7 @@ def load_incidents(path=None,exclude_run=None):
 
 def load_activity(path=None):
     with connection(path) as db:
-        rows = db.execute('SELECT run_id,payload FROM activity ORDER BY rowid').fetchall()
+        rows = db.execute('SELECT run_id,payload FROM activity_stream ORDER BY id').fetchall()
     return [{'run_id':row['run_id'],**json.loads(row['payload'])} for row in rows]
 
 
@@ -130,9 +177,9 @@ def update_saved_incident(run_id,local_id,action,outcome='',note='',path=None):
         # active is the last known signal state, not a live measurement.
         db.execute('UPDATE incidents SET payload=?,updated_at=? WHERE run_id=? AND local_id=?',
                    (json.dumps(event,ensure_ascii=False),utc_now(),run_id,local_id))
-        seq = db.execute('SELECT COALESCE(MAX(sequence),-1)+1 FROM activity WHERE run_id=?',
+        seq = db.execute("SELECT COALESCE(MAX(source_sequence),-1)+1 FROM activity_stream WHERE run_id=? AND source='archive'",
                          (run_id,)).fetchone()[0]
-        db.execute('INSERT INTO activity VALUES(?,?,?)',(run_id,seq,json.dumps({
+        db.execute('INSERT INTO activity_stream (run_id,source,source_sequence,payload) VALUES(?,?,?,?)',(run_id,'archive',seq,json.dumps({
             'type':'event','time':utc_now(),'apartment':event['apartment'],
             'event_id':local_id,'action':action,'outcome':outcome,'note':note[:1000],
             'source':'archive'},ensure_ascii=False)))

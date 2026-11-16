@@ -47,6 +47,8 @@ def persist_current():
     if 'simulation' in st.session_state:
         try:
             save_simulation(st.session_state['simulation'])
+            if st.session_state['simulation'].get('_workflow_conflicts'):
+                st.session_state['storage_conflict_notice'] = True
         except (OSError,sqlite3.Error):
             st.error(t('Could not save to the database. Check disk space and folder permissions, then retry.'))
             st.stop()
@@ -170,6 +172,8 @@ def monitor():
         else:
             c3.caption(t('Try: Apartment 03 → Start leak → click +15 minutes twice.'))
     persist_current()
+    if st.session_state.pop('storage_conflict_notice',False):
+        st.warning(t('Another window updated this incident. The saved result and notes were kept; your conflicting update was not applied.'))
     snap = sim['last_snapshot']
     offline = sum(s['offline'] for s in snap.values())
     active_water = {a for a,k in sim['open_events'] if k=='water'}

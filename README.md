@@ -97,7 +97,7 @@ Use **Saved history — all sessions** to view and export records after a reset 
 
 Resetting or changing time mode starts a new simulation without deleting saved history. The database and its journal files are excluded from Git. Keep the project folder writable, retain its `data/` directory when moving the project, and stop the app before copying the database for backup. No delete-history button is provided.
 
-The archive is a local, single-operator prototype, not a production audit service. There is no staff authentication, role system, SMS integration, automatic water shutoff, or physical sensor connection. Simultaneous operators and large historical datasets have not been validated.
+The archive is a local prototype, not a production audit service. When two windows edit the same incident, workflow fields are compared with the last saved state inside a SQLite write transaction. A newer saved result wins over a stale update, the local view is refreshed, and conflicting edits display a notice. Simulation and archive activity use separate sequence namespaces to preserve audit entries. There is no staff authentication, role system, SMS integration, automatic water shutoff, or physical sensor connection. Simultaneous operators and large historical datasets have not been validated.
 
 Long legitimate use can trigger alerts, while small or intermittent leaks may be missed. Security staff must inspect flagged situations. This prototype is not ready for unattended use in a real building.
 
@@ -110,7 +110,7 @@ From the repository root, after installing dependencies:
 .venv/bin/python checks.py
 ```
 
-Checks cover causal features, missing readings, short showers, incident creation and resolution, duplicate suppression, subsequent incidents, day boundaries, live time, Streamlit interactions, language switching without losing incident state or notes, SQLite round trips, unique session IDs, repeated saves, save failures, and completing saved inspections after a fresh browser session, contact persistence, disabled sample-contact actions, and safe email-link encoding.
+Checks cover causal features, missing readings, short showers, incident creation and resolution, duplicate suppression, subsequent incidents, day boundaries, live time, Streamlit interactions, language switching without losing incident state or notes, SQLite round trips, unique session IDs, repeated saves, save failures, and completing saved inspections after a fresh browser session, contact persistence, disabled sample-contact actions, safe email-link encoding, stale-window saves, conflicting inspection notes, and legacy audit migration.
 
 ## Project files
 
