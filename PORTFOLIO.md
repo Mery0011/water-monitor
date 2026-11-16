@@ -1,25 +1,42 @@
-# Suv nazorati — binolar uchun suv monitoringi prototipi
+# Water Monitor — Apartment Water Monitoring Prototype
 
-## Muammo va foydalanuvchi
+## Problem and users
 
-Xonadondagi suv sizishi kech aniqlansa, suv isrofi va boshqa xonadonlarga zarar yetishi mumkin. Security xodimiga tekshirish kerak bo‘lgan xonadonni ajratib ko‘rsatish kerak.
+An undetected apartment water leak can waste water and damage neighboring units. Building security staff need a way to identify apartments that require inspection and record the outcome.
 
-## Yaratilgan yechim
+## Solution
 
-5 ta virtual xonadonning daqiqalik suv sarfini kuzatuvchi mahalliy web-panel. Isolation Forest va davomiylik sharti shubhali oqimni aniqlaydi. Xodim hodisani qabul qiladi, tekshiruv natijasini belgilaydi va tarixni CSV sifatida yuklaydi. Aloqa uzilishi suv hodisasidan alohida ko‘rsatiladi.
+A local web dashboard monitors minute-by-minute synthetic water readings from five virtual apartments. An Isolation Forest model combined with a continuous-flow condition flags unusual usage for staff review.
 
-## Texnologiyalar
+Staff can acknowledge an alert, record an inspection outcome and notes, resolve the incident, and export its history as CSV. Sensor disconnection is tracked separately from water incidents. Resolving an active water incident also stops the simulated leak; it does not control a real valve.
 
-Python, scikit-learn, pandas, NumPy, Streamlit. Isolation Forest normal sun’iy xonadon-kunlarida o‘qitilgan. Validatsiya va test uchun mustaqil kunlar ishlatilgan. Pulli AI API ishlatilmaydi.
+The interface defaults to English and supports Korean and Uzbek. Live-time mode follows Asia/Seoul time (UTC+9), while accelerated mode supports a short interview demonstration. All readings in both modes are synthetic.
 
-## Natija va o‘rganilgan saboq
+## Technology and implementation
 
-24 ta sun’iy test kunida AI gibrid usuli 91,1% precision va 88,1% recall berdi (daqiqalar bo‘yicha). 12 sizishli kunning barchasida kamida bir signal chiqdi, lekin 12 oddiy kundan 5 tasida ham ogohlantirish bo‘ldi. AI 20 daqiqalik oddiy qoidadan ustun chiqmadi. Shuning uchun murakkab modelning qiymatini bazaviy qoida bilan tekshirish va yolg‘on signallarni ochiq hisoblash muhimligini ko‘rsatdim.
+Python, scikit-learn, pandas, NumPy, Altair, and Streamlit. The Isolation Forest model was trained on normal synthetic household-days, with separate validation and test days. Features use current and historical readings without looking ahead. The model runs locally without a paid AI API.
 
-## Chegaralar
+The project includes synthetic telemetry generation, model training and evaluation, a multilingual dashboard, incident state management, CSV reports, and automated regression checks.
 
-Bu sun’iy ma’lumotli prototip. Haqiqiy hisoblagich ulanmagan va real binoda sifat baholanmagan. SMS, avtomatik suv yopish, doimiy audit bazasi yoki ko‘p foydalanuvchili ruxsatlar mavjud emas. Model sizishni tasdiqlamaydi — xodim tekshiradi.
+## Results and lessons
 
-## Portfolio joylashuvi
+On 24 synthetic test days, the hybrid detector achieved **91.1% precision** and **88.1% recall**, measured per minute. It flagged at least one leak minute on all 12 leak days, but also raised alerts on 5 of the 12 normal days.
 
-Muqova sifatida ishlaydigan panelning haqiqiy skrinshotini qo‘ying. Uning tagida muammo, yechim va cheklovlarni qisqa yozing. 30–60 soniyalik namoyishda sizish → ogohlantirish → qabul qilish → tekshiruvni yakunlashni ko‘rsating. GitHub’da README, kod, sinovlar va metrics.json bo‘lsin; virtual muhitni yuklamang. Mahalliy localhost manzilini ommaviy ishlaydigan demo havolasi deb ko‘rsatmang.
+The AI did **not** outperform a simple 20-minute continuous-flow rule on this dataset. A 60-minute rule reduced false alerts but delayed detection. This comparison demonstrates why a model should be evaluated against a simple baseline and why false alerts matter alongside detection rates.
+
+These results describe this synthetic test set only; they do not demonstrate reliable performance in an occupied building. The next step is to collect real sensor readings and labeled incidents, then assess whether the model adds practical value.
+
+## Scope and limitations
+
+This is a portfolio prototype with no physical meter connection or real-world validation. It does not provide SMS delivery, automatic water shutoff, a persistent audit database, or staff authentication and access roles. Incident history is stored in session memory unless exported. The model flags situations for inspection rather than confirming leaks.
+
+## Portfolio presentation
+
+Use a screenshot of the actual dashboard as the project cover, followed by a short explanation of the problem, solution, evaluation, and limitations. A 30–60 second demonstration can show:
+
+1. Start a simulated leak and advance demo time.
+2. Show the alert and acknowledge it.
+3. Record an inspection outcome and resolve the incident.
+4. Show the restored apartment status and retained incident history.
+
+Link to the GitHub repository containing the README, source code, checks, and evaluation metrics. Do not upload the virtual environment. A localhost address is a local demo address, not a publicly hosted application.

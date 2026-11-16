@@ -108,7 +108,7 @@ Checks cover causal features, missing readings, short showers, incident creation
 | `artifacts/water_model.joblib` | Trained model and threshold |
 | `artifacts/metrics.json` | Evaluation results and dataset configuration |
 | `artifacts/example_day.csv` | Example synthetic test day |
-| `PORTFOLIO.md` | Portfolio presentation notes, currently in Uzbek |
+| `PORTFOLIO.md` | Portfolio project description and presentation notes in English |
 
 ## Branch workflow
 
