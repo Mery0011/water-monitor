@@ -1,5 +1,6 @@
 """English source strings with Korean and Uzbek translations."""
 KO = {
+    'Connection restored reconnects this demo sensor immediately. Device inspection required leaves it offline.':'연결 복구를 선택하면 데모 센서가 즉시 다시 연결됩니다. 장치 점검 필요를 선택하면 연결 끊김 상태가 유지됩니다.',
     'Another window updated this incident. The saved result and notes were kept; your conflicting update was not applied.':'다른 창에서 이 알림을 변경했습니다. 저장된 결과와 메모를 유지했으며 충돌하는 변경은 적용하지 않았습니다.',
     'Contact owner':'세대주 연락',
     'Could not load owner contact. Check database permissions.':'연락처를 불러오지 못했습니다. 데이터베이스 권한을 확인하세요.',
@@ -106,6 +107,7 @@ KO = {
 }
 
 UZ = {
+    'Connection restored reconnects this demo sensor immediately. Device inspection required leaves it offline.':'Aloqa tiklandi tanlansa demo sensori darhol ulanadi. Qurilma tekshiruvi kerak tanlansa aloqa uzilgan holat qoladi.',
     'Another window updated this incident. The saved result and notes were kept; your conflicting update was not applied.':'Boshqa oynada bu hodisa yangilangan. Saqlangan natija va izohlar qoldirildi; sizning zid o‘zgarishingiz qo‘llanmadi.',
     'Contact owner':'Xonadon egasi bilan bog‘lanish',
     'Could not load owner contact. Check database permissions.':'Kontaktni ochib bo‘lmadi. Baza ruxsatlarini tekshiring.',

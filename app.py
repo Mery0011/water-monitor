@@ -11,7 +11,7 @@ import joblib
 import pandas as pd
 import streamlit as st
 import altair as alt
-from engine import APARTMENTS, new_simulation, new_live, sync_live, local_now, advance, set_mode, update_event, clock_label, stop_demo_water, ensure_apartments
+from engine import APARTMENTS, new_simulation, new_live, sync_live, local_now, advance, set_mode, update_event, clock_label, stop_demo_water, ensure_apartments, restore_demo_connection
 from i18n import translate, OUTCOMES
 from storage import save_simulation, load_incidents, update_saved_incident
 from engine import LOCAL_TZ
@@ -85,6 +85,7 @@ ensure_apartments(st.session_state['simulation'],bundle)
 for old_event in st.session_state['simulation']['events']:
     if old_event['status'] == 'resolved':
         stop_demo_water(st.session_state['simulation'],old_event)
+        restore_demo_connection(st.session_state['simulation'],old_event)
 
 SCENARIOS = {'normal':'Normal','leak':'Leak','shower':'15-minute shower','offline':'Offline'}
 STATUSES = {'new':'New','ack':'Acknowledged','resolved':'Resolved'}
@@ -252,6 +253,8 @@ def monitor():
                 with st.expander(t('Complete inspection')):
                     if event['kind']=='water':
                         st.caption(t('In this demo, Resolve also stops the simulated leak and restores normal flow. It does not control a real valve.'))
+                    else:
+                        st.caption(t('Connection restored reconnects this demo sensor immediately. Device inspection required leaves it offline.'))
                     options = ['leak_fixed','normal_usage','unknown'] if event['kind']=='water' else ['connection_restored','device_check']
                     # Discard legacy translated widget values, keeping saved event data.
                     outcome_key = f"out_{event['id']}"

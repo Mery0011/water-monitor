@@ -180,6 +180,7 @@ def update_event(sim, event_id, action, outcome='', note=''):
     elif action == 'resolve' and event['status'] in ('new', 'ack') and outcome:
         event.update(status='resolved', outcome=outcome, note=note[:1000])
         stop_demo_water(sim,event)
+        restore_demo_connection(sim,event)
     else:
         raise ValueError('Invalid event transition')
     sim['history'].append({'type':'event','time':clock_label(sim['minute']),
@@ -198,6 +199,28 @@ def stop_demo_water(sim, event):
     event.update(active=False,end=sim['minute'])
     if apt in sim['last_snapshot']:
         sim['last_snapshot'][apt].update(flow=0.0,duration=0,anomaly=False,baseline=False)
+
+
+def restore_demo_connection(sim, event):
+    """Apply a confirmed demo reconnection to its matching active incident."""
+    if event['kind'] != 'offline' or not event['active'] or event['outcome'] not in ('connection_restored','Aloqa tiklandi'):
+        return
+    apt = event['apartment']
+    if sim['open_events'].get((apt,'offline')) != event['id']:
+        return
+    set_mode(sim,apt,'normal')
+    # Restore only the current sample, preserving earlier missing readings.
+    minute = sim['minute']
+    day,within_day = divmod(minute,1440)
+    original = make_day(90000+APARTMENTS.index(apt)+100*day)
+    flow = float(original.loc[within_day,'flow'])
+    sim['frames'][apt].loc[minute,['flow','truth']] = [flow,0]
+    sim['open_events'].pop((apt,'offline'))
+    event.update(active=False,end=minute)
+    if apt in sim['last_snapshot']:
+        duration = int(features(sim['frames'][apt].iloc[:minute+1]).continuous.iloc[-1])
+        sim['last_snapshot'][apt].update(offline=False,flow=flow,duration=duration,
+                                         anomaly=False,baseline=False)
 
 
 def ensure_apartments(sim, bundle):

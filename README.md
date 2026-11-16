@@ -45,7 +45,7 @@ Select **Accelerated demo** first. The default **Live time** mode follows the re
 2. Click **+15 minutes** twice. This adds a continuous simulated leak of 0.7 L/min. In this scenario, an alert appears after 20 simulated readings.
 3. Click **Acknowledge** in the alert card.
 4. Open **Complete inspection**, select an outcome, optionally enter a staff note, and click **Resolve**. Resolving an active water incident also stops its simulated leak, resets the current flow to zero, and restores normal status. Earlier readings and incident history remain visible. No physical valve is controlled.
-5. Try **Disconnect sensor** in another apartment, then advance time to create a separate connection alert. Use **Restore normal** to resume readings.
+5. Try **Disconnect sensor** in another apartment, then advance time to create a separate connection alert. Choose **Connection restored** when resolving the connection alert to reconnect the demo sensor immediately, or use **Restore normal** to resume readings. Choosing **Device inspection required** records the inspection but leaves the sensor offline.
 6. Try **Shower — 15 minutes**. It simulates 7 L/min for 15 minutes and then ends automatically.
 7. Download the incident report from **Incident history and report**.
 
@@ -89,7 +89,7 @@ The dashboard keeps an incident active until flow stops to avoid duplicate incid
 
 ## Incident workflow and limitations
 
-Incidents move through **New → Acknowledged → Resolved**. Signal activity is tracked separately from inspection status. Resolving an active water incident simulates repair; a later leak can create a new incident ID. Connection loss is a separate incident type, and missing readings break continuous-flow tracking.
+Incidents move through **New → Acknowledged → Resolved**. Signal activity is tracked separately from inspection status. Resolving an active water incident simulates repair; a later leak can create a new incident ID. Connection loss is a separate incident type, and missing readings break continuous-flow tracking. Resolving an active connection incident as **Connection restored** switches the demo sensor back to normal, restores the current sample, clears its active signal, and preserves earlier missing readings. The change is immediate even while playback is paused. Resolving it as **Device inspection required** leaves the connection offline.
 
 Incidents, inspection outcomes, staff notes, and activity entries are saved to `data/water-monitor.sqlite3` using Python's built-in SQLite module. No extra service or database installation is needed. Writes are transactional, repeated saves do not duplicate incidents, and each session has a unique identifier so that incident numbers from different runs do not collide.
 

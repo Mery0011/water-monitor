@@ -15,7 +15,7 @@ from streamlit.testing.v1 import AppTest
 from contacts import get_contact, save_contact, contact_links
 from urllib.parse import urlparse, parse_qs
 from storage import save_simulation, load_incidents, load_activity, update_saved_incident
-from engine import make_day, features, new_simulation, advance, set_mode, update_event, new_live, sync_live, LOCAL_TZ, APARTMENTS, ensure_apartments
+from engine import make_day, features, new_simulation, advance, set_mode, update_event, new_live, sync_live, LOCAL_TZ, APARTMENTS, ensure_apartments, restore_demo_connection
 
 ROOT = Path(__file__).resolve().parent
 BUNDLE = joblib.load(ROOT/'artifacts/water_model.joblib')
@@ -274,6 +274,54 @@ class EngineTests(unittest.TestCase):
         advance(sim,BUNDLE,30)
         self.assertEqual(sim['modes']['01'],'normal')
         self.assertFalse([e for e in sim['events'] if e['apartment']=='01'])
+
+    def test_resolve_connection_restores_current_sample_and_keeps_history(self):
+        sim = new_simulation()
+        set_mode(sim,'02','offline'); advance(sim,BUNDLE,15)
+        event = next(e for e in sim['events'] if e['apartment']=='02')
+        minute = sim['minute']
+        update_event(sim,event['id'],'resolve','connection_restored','Sensor reconnected')
+        self.assertEqual(sim['minute'],minute)
+        self.assertEqual(sim['modes']['02'],'normal')
+        self.assertFalse(sim['last_snapshot']['02']['offline'])
+        self.assertTrue(np.isfinite(sim['last_snapshot']['02']['flow']))
+        self.assertFalse(event['active'])
+        self.assertEqual(event['end'],minute)
+        self.assertNotIn(('02','offline'),sim['open_events'])
+        self.assertTrue(pd.isna(sim['frames']['02'].loc[minute-1,'flow']))
+        self.assertTrue(pd.notna(sim['frames']['02'].loc[minute,'flow']))
+        save_simulation(sim)
+        self.assertFalse(load_incidents()[0]['active'])
+        set_mode(sim,'02','offline'); advance(sim,BUNDLE,1)
+        self.assertEqual(len(sim['events']),2)
+        self.assertNotEqual(sim['events'][-1]['id'],event['id'])
+        # Reapplying an old resolution must not reconnect a new incident.
+        restore_demo_connection(sim,event)
+        self.assertTrue(sim['last_snapshot']['02']['offline'])
+
+    def test_device_inspection_does_not_claim_connection_restored(self):
+        sim = new_simulation()
+        set_mode(sim,'02','offline'); advance(sim,BUNDLE,15)
+        event = sim['events'][0]
+        update_event(sim,event['id'],'resolve','device_check')
+        self.assertTrue(event['active'])
+        self.assertTrue(sim['last_snapshot']['02']['offline'])
+        self.assertEqual(sim['modes']['02'],'offline')
+
+    def test_ui_resolve_connection_updates_card_without_advancing(self):
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        app.radio[0].set_value('demo').run()
+        app.button(key='scenario_offline').click().run()
+        app.button(key='step').click().run()
+        minute = app.session_state['simulation']['minute']
+        app.selectbox(key='out_1').set_value('connection_restored').run()
+        app.button(key='done_1').click().run()
+        self.assertFalse(app.exception)
+        sim = app.session_state['simulation']
+        self.assertEqual(sim['minute'],minute)
+        self.assertFalse(sim['last_snapshot']['03']['offline'])
+        self.assertEqual(sim['modes']['03'],'normal')
+        self.assertEqual(next(m for m in app.metric if m.label=='Offline').value,'0')
 
     def test_offline_and_recovery(self):
         sim = new_simulation()
