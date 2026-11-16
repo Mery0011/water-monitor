@@ -1,6 +1,6 @@
 # Water Monitor
 
-A local portfolio prototype that flags unusual apartment water usage for security staff to inspect. It combines an Isolation Forest model, a Streamlit dashboard, five virtual apartments, and an incident management workflow.
+A local portfolio prototype that flags unusual apartment water usage for security staff to inspect. It combines an Isolation Forest model, a Streamlit dashboard, 15 virtual apartments, and an incident management workflow.
 
 **All water readings are synthetic. No real meter or valve is connected.** The prototype demonstrates a workflow; it does not establish real-world leak detection performance.
 

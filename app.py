@@ -9,7 +9,7 @@ import joblib
 import pandas as pd
 import streamlit as st
 import altair as alt
-from engine import APARTMENTS, new_simulation, new_live, sync_live, local_now, advance, set_mode, update_event, clock_label, stop_demo_water
+from engine import APARTMENTS, new_simulation, new_live, sync_live, local_now, advance, set_mode, update_event, clock_label, stop_demo_water, ensure_apartments
 from i18n import translate, OUTCOMES
 
 ROOT = Path(__file__).resolve().parent
@@ -60,6 +60,8 @@ live = mode=='live'
 if 'simulation' not in st.session_state or st.session_state['simulation'].get('live',False)!=live:
     st.session_state['simulation'] = new_live() if live else new_simulation()
     st.session_state['played_events'] = set()
+
+ensure_apartments(st.session_state['simulation'],bundle)
 
 # Also repair already-resolved incidents from sessions opened before this fix.
 for old_event in st.session_state['simulation']['events']:
@@ -118,14 +120,15 @@ def monitor():
     b.metric(t('Normal'),len(APARTMENTS)-offline-len(active_water))
     c.metric(t('Water inspections'),len(active_water))
     d.metric(t('Offline'),offline)
-    for col,apt in zip(st.columns(5),APARTMENTS):
-        reading = snap[apt]
-        with col:
-            st.markdown('**'+t('Apartment {apt}',apt=apt)+'**')
-            if reading['offline']: st.error(t('No connection'))
-            elif apt in active_water: st.warning(t('Inspection needed'))
-            else: st.success(t('Normal'))
-            st.caption(t('No reading') if reading['offline'] else f"{reading['flow']:.2f} L/min")
+    for row_start in range(0,len(APARTMENTS),5):
+        for col,apt in zip(st.columns(5),APARTMENTS[row_start:row_start+5]):
+            reading = snap[apt]
+            with col:
+                st.markdown('**'+t('Apartment {apt}',apt=apt)+'**')
+                if reading['offline']: st.error(t('No connection'))
+                elif apt in active_water: st.warning(t('Inspection needed'))
+                else: st.success(t('Normal'))
+                st.caption(t('No reading') if reading['offline'] else f"{reading['flow']:.2f} L/min")
     st.divider()
     left,right = st.columns([1.5,1],gap='large')
     with left:

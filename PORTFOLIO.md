@@ -6,7 +6,7 @@ An undetected apartment water leak can waste water and damage neighboring units.
 
 ## Solution
 
-A local web dashboard monitors minute-by-minute synthetic water readings from five virtual apartments. An Isolation Forest model combined with a continuous-flow condition flags unusual usage for staff review.
+A local web dashboard monitors minute-by-minute synthetic water readings from 15 virtual apartments. An Isolation Forest model combined with a continuous-flow condition flags unusual usage for staff review.
 
 Staff can acknowledge an alert, record an inspection outcome and notes, resolve the incident, and export its history as CSV. Sensor disconnection is tracked separately from water incidents. Resolving an active water incident also stops the simulated leak; it does not control a real valve.
 

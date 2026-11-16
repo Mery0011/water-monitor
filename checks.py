@@ -6,13 +6,28 @@ import joblib
 import numpy as np
 import pandas as pd
 from streamlit.testing.v1 import AppTest
-from engine import make_day, features, new_simulation, advance, set_mode, update_event, new_live, sync_live, LOCAL_TZ
+from engine import make_day, features, new_simulation, advance, set_mode, update_event, new_live, sync_live, LOCAL_TZ, APARTMENTS, ensure_apartments
 
 ROOT = Path(__file__).resolve().parent
 BUNDLE = joblib.load(ROOT/'artifacts/water_model.joblib')
 
 
 class EngineTests(unittest.TestCase):
+    def test_fifteen_apartments_and_existing_session_upgrade(self):
+        sim = new_simulation()
+        self.assertEqual(APARTMENTS, [f'{i:02d}' for i in range(1,16)])
+        self.assertEqual(len(sim['frames']),15)
+        set_mode(sim,'15','leak')
+        advance(sim,BUNDLE,60)
+        self.assertIn(('15','water'),sim['open_events'])
+        self.assertEqual(len(sim['last_snapshot']),15)
+        saved_event = sim['events'][0].copy()
+        del sim['frames']['14']
+        del sim['modes']['14']
+        ensure_apartments(sim,BUNDLE)
+        self.assertIn('14',sim['last_snapshot'])
+        self.assertEqual(sim['events'][0],saved_event)
+
     def test_live_clock_real_minutes_and_midnight(self):
         now = datetime(2026,11,16,23,59,20,tzinfo=LOCAL_TZ)
         sim = new_live(now)

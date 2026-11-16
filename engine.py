@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 LOCAL_TZ = ZoneInfo('Asia/Seoul')
 
 FEATURES = ['flow', 'mean15', 'mean60', 'std15', 'continuous', 'hour_sin', 'hour_cos']
-APARTMENTS = ['01', '02', '03', '04', '05']
+APARTMENTS = [f'{number:02d}' for number in range(1, 16)]
 
 
 def make_day(seed, leak=False):
@@ -198,3 +198,16 @@ def stop_demo_water(sim, event):
     event.update(active=False,end=sim['minute'])
     if apt in sim['last_snapshot']:
         sim['last_snapshot'][apt].update(flow=0.0,duration=0,anomaly=False,baseline=False)
+
+
+def ensure_apartments(sim, bundle):
+    """Add new apartments to an existing session without discarding incidents."""
+    added = False
+    for index, apt in enumerate(APARTMENTS):
+        if apt not in sim['frames']:
+            sim['frames'][apt] = make_day(90000 + index)
+            sim['modes'][apt] = 'normal'
+            sim['mode_until'][apt] = 1440
+            added = True
+    if added:
+        advance(sim, bundle, 0)
