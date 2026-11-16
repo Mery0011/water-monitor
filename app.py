@@ -1,0 +1,247 @@
+from pathlib import Path
+import io
+import json
+import math
+import struct
+import time
+import wave
+import joblib
+import pandas as pd
+import streamlit as st
+import altair as alt
+from engine import APARTMENTS, new_simulation, new_live, sync_live, local_now, advance, set_mode, update_event, clock_label, stop_demo_water
+from i18n import translate, OUTCOMES
+
+ROOT = Path(__file__).resolve().parent
+language = st.session_state.get('language', 'en')
+def t(text, **values):
+    return translate(text, language, **values)
+
+st.set_page_config(page_title=t('Water Monitor'), page_icon='💧', layout='wide', initial_sidebar_state='collapsed')
+st.markdown('''<style>
+.stApp{background:#f4f8fb} .block-container{max-width:1450px;padding-top:2rem}
+h1,h2,h3{color:#102c42} div[data-testid="stMetric"]{background:white;border:1px solid #dbe7ec;
+border-radius:12px;padding:16px} .stButton>button[kind="primary"]{background:#008e91;border:0}
+</style>''', unsafe_allow_html=True)
+_, language_column = st.columns([3,1])
+with language_column:
+    language = st.selectbox('Language / 언어 / Til', ['en','ko','uz'], format_func=lambda code: {'en':'English','ko':'한국어','uz':'O‘zbekcha'}[code], key='language')
+
+@st.cache_resource
+def load_bundle():
+    return joblib.load(ROOT/'artifacts/water_model.joblib')
+
+if not (ROOT/'artifacts/water_model.joblib').exists():
+    st.error(t('Train the model with train.py first.')); st.stop()
+bundle = load_bundle()
+metrics = json.loads((ROOT/'artifacts/metrics.json').read_text())
+st.caption(t('PORTFOLIO PROTOTYPE • SYNTHETIC DATA • NO REAL METER CONNECTED'))
+st.title('💧 '+t('Water Monitor'))
+st.write(t('Water usage and unusual activity, from apartments to the security desk.'))
+with st.sidebar:
+    st.header(t('About this project'))
+    st.write(t('**Model:** Isolation Forest + 20 minutes of continuous flow.'))
+    st.write(t('**Baseline:** alert after 60 minutes of continuous flow.'))
+    st.info(t('The AI flags unusual usage for inspection; it does not confirm a leak.'))
+    st.caption(t('All results use synthetic scenarios. Performance in a real building has not been measured.'))
+    if st.button(t('Reset demo'),key='reset',width='stretch'):
+        st.session_state.pop('simulation',None)
+        st.session_state['played_events'] = set()
+        st.rerun()
+    sound = st.toggle(t('Sound on new incident'),value=False,key='sound')
+    st.caption(t('Your browser may require autoplay permission.'))
+
+# Stable internal values preserve time mode and incidents when switching language.
+if st.session_state.get('time_mode') not in (None,'live','demo'):
+    old = st.session_state.pop('time_mode')
+    st.session_state['time_mode'] = 'live' if old=='Jonli vaqt' else 'demo'
+mode = st.radio(t('Time mode'),['live','demo'],format_func=lambda v:t('Live time' if v=='live' else 'Accelerated demo'),horizontal=True,key='time_mode')
+live = mode=='live'
+if 'simulation' not in st.session_state or st.session_state['simulation'].get('live',False)!=live:
+    st.session_state['simulation'] = new_live() if live else new_simulation()
+    st.session_state['played_events'] = set()
+
+# Also repair already-resolved incidents from sessions opened before this fix.
+for old_event in st.session_state['simulation']['events']:
+    if old_event['status'] == 'resolved':
+        stop_demo_water(st.session_state['simulation'],old_event)
+
+SCENARIOS = {'normal':'Normal','leak':'Leak','shower':'15-minute shower','offline':'Offline'}
+STATUSES = {'new':'New','ack':'Acknowledged','resolved':'Resolved'}
+def outcome_label(value):
+    legacy = {'Sizish tasdiqlandi':'Leak confirmed','Oddiy foydalanish':'Normal usage',
+              'Sababi aniqlanmadi':'Cause unknown','Aloqa tiklandi':'Connection restored',
+              'Qurilma tekshiruvi kerak':'Device inspection required'}
+    return t(OUTCOMES.get(value,legacy.get(value,value)))
+
+def alarm():
+    data = io.BytesIO()
+    with wave.open(data,'wb') as wav:
+        wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(16000)
+        wav.writeframes(b''.join(struct.pack('<h',int(7000*math.sin(2*math.pi*700*i/16000))) for i in range(4800)))
+    return data.getvalue()
+
+@st.fragment(run_every='2s')
+def monitor():
+    sim = st.session_state['simulation']
+    if live:
+        sync_live(sim,bundle)
+    elif not sim['last_snapshot']:
+        advance(sim,bundle,steps=1)
+    st.subheader(t('Security dashboard — Building A'))
+    c1,c2,c3 = st.columns([1,1,2])
+    if c1.button(t('⏸ Pause' if sim['running'] else '▶ Start automatically'),key='play',width='stretch'):
+        sim['running'] = not sim['running']
+        sim['last_tick'] = time.monotonic()
+    step = c2.button(t('+15 minutes'),key='step',width='stretch',disabled=live or sim['minute']>=1439)
+    if step:
+        advance(sim,bundle,15)
+    elif not live and sim['running'] and time.monotonic()-sim.get('last_tick',0)>=1.8:
+        advance(sim,bundle,5); sim['last_tick'] = time.monotonic()
+    if live:
+        st.caption(t('Local time: {now} • Asia/Seoul (UTC+9) • Last reading: {reading} • {status}',
+            now=local_now().strftime('%Y-%m-%d %H:%M:%S'),reading=clock_label(sim['minute']),
+            status=t('Live: one reading per minute' if sim['running'] else 'Monitoring paused')))
+        c3.caption(t('Live time: 1 minute = 1 real minute. Use demo mode for a quick test.'))
+    else:
+        st.caption(t('Simulation time: {time} • 1 reading = 1 virtual minute • Auto: 2 seconds = 5 virtual minutes',time=clock_label(sim['minute'])))
+        if sim['minute']>=1439:
+            c3.info(t('The day has ended. Use Reset demo to start again.'))
+        else:
+            c3.caption(t('Try: Apartment 03 → Start leak → click +15 minutes twice.'))
+    snap = sim['last_snapshot']
+    offline = sum(s['offline'] for s in snap.values())
+    active_water = {a for a,k in sim['open_events'] if k=='water'}
+    pending = [e for e in sim['events'] if e['status']!='resolved']
+    a,b,c,d = st.columns(4)
+    a.metric(t('Apartments'),len(APARTMENTS))
+    b.metric(t('Normal'),len(APARTMENTS)-offline-len(active_water))
+    c.metric(t('Water inspections'),len(active_water))
+    d.metric(t('Offline'),offline)
+    for col,apt in zip(st.columns(5),APARTMENTS):
+        reading = snap[apt]
+        with col:
+            st.markdown('**'+t('Apartment {apt}',apt=apt)+'**')
+            if reading['offline']: st.error(t('No connection'))
+            elif apt in active_water: st.warning(t('Inspection needed'))
+            else: st.success(t('Normal'))
+            st.caption(t('No reading') if reading['offline'] else f"{reading['flow']:.2f} L/min")
+    st.divider()
+    left,right = st.columns([1.5,1],gap='large')
+    with left:
+        apt = st.selectbox(t('Select apartment'),APARTMENTS,index=2,key='chosen_apartment')
+        st.caption(t('Current scenario: {scenario}',scenario=t(SCENARIOS[sim['modes'][apt]])))
+        chart_slot = st.container()
+        controls = st.columns(2)
+        for column,label,value in [(0,'💧 Start leak','leak'),(1,'🚿 Shower — 15 minutes','shower'),
+                                   (0,'📡 Disconnect sensor','offline'),(1,'✓ Restore normal','normal')]:
+            if controls[column].button(t(label),key='scenario_'+value,width='stretch'):
+                set_mode(sim,apt,value); st.rerun()
+        st.caption(t('Changes apply from the next reading. Leak: +0.7 L/min. Shower: 7 L/min for 15 minutes, then ends automatically.'))
+        frame = sim['frames'][apt].iloc[:sim['minute']+1].tail(180).copy()
+        origin = sim['origin'].replace(tzinfo=None) if live else pd.Timestamp('2026-01-01')
+        times = origin+pd.to_timedelta(frame.minute,unit='m')
+        frame['time_label'] = times.dt.strftime('%H:%M')
+        max_flow = frame.flow.max()
+        upper = max(1.0,float(max_flow)*1.15) if pd.notna(max_flow) else 1.0
+        chart = alt.Chart(frame).mark_line(color='#008e91',strokeWidth=3,point={'filled':True,'size':12}).encode(
+            x=alt.X('time_label:O',title=t('Time'),sort=None,
+                axis=alt.Axis(values=frame.time_label.tolist()[::30]+[frame.time_label.iloc[-1]],labelAngle=0)),
+            y=alt.Y('flow:Q',title=t('Water flow (L/min)'),scale=alt.Scale(domain=[-0.05,upper])),
+            tooltip=[alt.Tooltip('time_label:O',title=t('Time')),alt.Tooltip('flow:Q',title='L/min',format='.2f')]
+        ).properties(height=260)
+        with chart_slot:
+            st.altair_chart(chart,width='stretch')
+            if frame.flow.notna().sum()==0:
+                st.warning(t('No sensor readings in this period. Restore the connection to see new data.'))
+            elif frame.flow.fillna(0).max()==0:
+                st.info(t('Water flow is 0 L/min. The flat line is valid data, not a missing chart.'))
+            if not live and not sim['running']:
+                st.caption(t('Demo paused. Press Start automatically or +15 minutes to update the chart.'))
+        st.caption(t('Chart: last 180 minutes, local time (UTC+9).' if live else 'Chart: last 180 virtual minutes.')+' '+
+                   t('Usage is synthetic; no real meter is connected. No readings during a connection loss.'))
+        reading = snap[apt]
+        st.write(t('**Continuous flow:** {minutes} minutes',minutes=reading['duration']))
+        st.write(t('**60-minute baseline:** {status}',status=t('Alert' if reading['baseline'] else 'Quiet')))
+        st.caption(t('The AI score is not a probability. One incident stays active until flow stops, avoiding duplicate alerts from score fluctuations.'))
+    with right:
+        st.subheader(t('Alerts'))
+        st.caption(t('{count} unresolved incidents',count=len(pending)))
+        if not pending: st.success(t('No incidents waiting for inspection.'))
+        for event in reversed(pending[-12:]):
+            with st.container(border=True):
+                st.markdown(f"**#{event['id']} • "+t('Apartment {apt}',apt=event['apartment'])+'**')
+                st.warning(t('Offline' if event['kind']=='offline' else 'Possible water leak'))
+                st.caption(t('Started: {time} • {status}',time=clock_label(event['start']),
+                    status=t('Signal ongoing' if event['active'] else 'Signal ended; inspection pending')))
+                if event['kind']=='water':
+                    st.write(t('At detection: {minutes} minutes of continuous flow, {flow} L/min.',
+                        minutes=event['duration'],flow=f"{event['flow']:.2f}"))
+                if event['status']=='new':
+                    if st.button(t('Acknowledge'),key=f"ack_{event['id']}",width='stretch'):
+                        update_event(sim,event['id'],'ack'); st.rerun()
+                else: st.caption(t('✓ Acknowledged by security — inspection needed'))
+                with st.expander(t('Complete inspection')):
+                    if event['kind']=='water':
+                        st.caption(t('In this demo, Resolve also stops the simulated leak and restores normal flow. It does not control a real valve.'))
+                    options = ['leak_fixed','normal_usage','unknown'] if event['kind']=='water' else ['connection_restored','device_check']
+                    # Discard legacy translated widget values, keeping saved event data.
+                    outcome_key = f"out_{event['id']}"
+                    if outcome_key in st.session_state and st.session_state[outcome_key] not in options:
+                        del st.session_state[outcome_key]
+                    outcome = st.selectbox(t('Outcome'),options,format_func=outcome_label,key=outcome_key)
+                    note = st.text_input(t('Staff note'),key=f"note_{event['id']}",max_chars=1000)
+                    if st.button(t('Resolve'),key=f"done_{event['id']}"):
+                        update_event(sim,event['id'],'resolve',outcome,note); st.rerun()
+        new_ids = {e['id'] for e in pending if e['status']=='new'}
+        played = st.session_state.setdefault('played_events',set())
+        if sound and new_ids-played: st.audio(alarm(),format='audio/wav',autoplay=True)
+        st.session_state['played_events'] = played|new_ids
+    with st.expander(t('Incident history and report')):
+        records = [{t('ID'):e['id'],t('Apartment'):e['apartment'],
+            t('Type'):t('Offline' if e['kind']=='offline' else 'Possible water leak'),
+            t('Started'):clock_label(e['start']),t('Status'):t(STATUSES[e['status']]),
+            t('Signal active'):t('Signal ongoing' if e['active'] else 'Quiet'),
+            t('Outcome'):outcome_label(e['outcome']),t('Note'):e['note']} for e in sim['events']]
+        if records:
+            table = pd.DataFrame(records)
+            st.dataframe(table,hide_index=True,width='stretch')
+            st.download_button(t('Download incidents as CSV'),table.to_csv(index=False).encode('utf-8-sig'),
+                'water-incidents.csv','text/csv',key='download_incidents')
+        else: st.write(t('No incidents yet.'))
+        # Derive translated activity from structured state, never translate staff notes.
+        activity = []
+        for h in sim['history']:
+            if h.get('type')=='scenario':
+                action = t('Scenario')+': '+t(SCENARIOS[h['mode']])
+            elif h.get('type')=='event':
+                action = f"#{h['event_id']}: "+t('Acknowledged' if h['action']=='ack' else 'Resolved')
+                if h.get('outcome'): action += ' — '+outcome_label(h['outcome'])
+                if h.get('note'): action += ' — '+h['note']
+            else:
+                continue
+            activity.append({t('Time'):h['time'],t('Apartment'):h['apartment'],t('Action'):action})
+        if activity: st.dataframe(pd.DataFrame(activity),hide_index=True)
+        st.caption(t('Demo history is stored in session memory and cleared on reset. CSV is generated only when you download it.'))
+
+monitor()
+st.divider()
+st.subheader(t('Does the model outperform simple rules?'))
+st.caption(t('Tested on 24 separate synthetic household-days only. This is not evidence of real-building performance.'))
+rows = []
+for label,key in [('AI + 20 minutes','hybrid'),('20-minute rule','rule20'),('60-minute rule','baseline')]:
+    result = metrics[key]; report = result['classification']['leak']
+    rows.append({t('Method'):t(label),t('Precision'):f"{report['precision']:.1%}",
+        t('Recall'):f"{report['recall']:.1%}",t('F1'):f"{report['f1-score']:.1%}",
+        t('Leak days detected'):f"{result['leak_days_detected']}/{result['leak_days']}",
+        t('Normal days with alerts'):f"{result['normal_days_alerted']}/{result['normal_days']}",
+        t('Median delay (min)'):result['median_delay_minutes']})
+st.dataframe(pd.DataFrame(rows),hide_index=True,width='stretch')
+with st.expander(t('Training and limitations')):
+    for paragraph in [
+        'Isolation Forest was trained on 60 independent synthetic days without leaks. The threshold was selected on 24 validation days and evaluated on 24 separate test days. Demo data belongs to none of these sets.',
+        'The score threshold is at least the 95th percentile of normal training scores. Comparison with the 20-minute rule tests whether the model adds value; AI need not win every metric.',
+        'Precision and recall are measured per minute. A leak day is detected if at least one leak minute is flagged. Delay is calculated only for detected incidents.',
+        'Features include current flow, 15/60-minute averages, variability, continuous-flow duration, and time of day. This is a hybrid of a model and rules.']:
+        st.write(t(paragraph))
+    st.warning(t('Long normal usage can trigger alerts. Small or intermittent leaks may be missed. This prototype does not shut off water, send SMS, or make decisions for security staff. Real-world validation and permissions are future work.'))

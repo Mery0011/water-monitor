@@ -1,0 +1,162 @@
+{
+  "data_type": "SYNTHETIC ONLY",
+  "features": [
+    "flow",
+    "mean15",
+    "mean60",
+    "std15",
+    "continuous",
+    "hour_sin",
+    "hour_cos"
+  ],
+  "training_days": 60,
+  "validation_days": 24,
+  "test_days": 24,
+  "training_seed_range": [
+    1000,
+    1059
+  ],
+  "validation_seed_range": [
+    2000,
+    2023
+  ],
+  "test_seed_range": [
+    3000,
+    3023
+  ],
+  "threshold": 0.5812706422141857,
+  "selection": "Validation minute-level F1; score >= training 95th percentile; persistence >=20 minutes",
+  "minimum_threshold": 0.5812706422141857,
+  "hybrid": {
+    "classification": {
+      "normal": {
+        "precision": 0.9929973701914256,
+        "recall": 0.9949445431705374,
+        "f1-score": 0.9939700030609121,
+        "support": 32638.0
+      },
+      "leak": {
+        "precision": 0.9111948331539289,
+        "recall": 0.880853277835588,
+        "f1-score": 0.8957671957671958,
+        "support": 1922.0
+      },
+      "accuracy": 0.9885995370370371,
+      "macro avg": {
+        "precision": 0.9520961016726772,
+        "recall": 0.9378989105030626,
+        "f1-score": 0.944868599414054,
+        "support": 34560.0
+      },
+      "weighted avg": {
+        "precision": 0.9884480508573381,
+        "recall": 0.9885995370370371,
+        "f1-score": 0.988508608511765,
+        "support": 34560.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        32473,
+        165
+      ],
+      [
+        229,
+        1693
+      ]
+    ],
+    "leak_days_detected": 12,
+    "leak_days": 12,
+    "normal_days_alerted": 5,
+    "normal_days": 12,
+    "median_delay_minutes": 19.0
+  },
+  "baseline": {
+    "classification": {
+      "normal": {
+        "precision": 0.9788147036759189,
+        "recall": 0.9994178564863043,
+        "f1-score": 0.9890089898882707,
+        "support": 32638.0
+      },
+      "leak": {
+        "precision": 0.9846153846153847,
+        "recall": 0.6326742976066597,
+        "f1-score": 0.7703515996198923,
+        "support": 1922.0
+      },
+      "accuracy": 0.9790219907407407,
+      "macro avg": {
+        "precision": 0.9817150441456518,
+        "recall": 0.816046077046482,
+        "f1-score": 0.8796802947540815,
+        "support": 34560.0
+      },
+      "weighted avg": {
+        "precision": 0.9791372994156659,
+        "recall": 0.9790219907407407,
+        "f1-score": 0.976848703311424,
+        "support": 34560.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        32619,
+        19
+      ],
+      [
+        706,
+        1216
+      ]
+    ],
+    "leak_days_detected": 12,
+    "leak_days": 12,
+    "normal_days_alerted": 0,
+    "normal_days": 12,
+    "median_delay_minutes": 59.0
+  },
+  "rule20": {
+    "classification": {
+      "normal": {
+        "precision": 0.9930884736536285,
+        "recall": 0.9949445431705374,
+        "f1-score": 0.9940156419792767,
+        "support": 32638.0
+      },
+      "leak": {
+        "precision": 0.9113379903277807,
+        "recall": 0.882414151925078,
+        "f1-score": 0.8966428760243194,
+        "support": 1922.0
+      },
+      "accuracy": 0.9886863425925926,
+      "macro avg": {
+        "precision": 0.9522132319907046,
+        "recall": 0.9386793475478077,
+        "f1-score": 0.9453292590017981,
+        "support": 34560.0
+      },
+      "weighted avg": {
+        "precision": 0.9885420492047777,
+        "recall": 0.9886863425925926,
+        "f1-score": 0.9886004088726382,
+        "support": 34560.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        32473,
+        165
+      ],
+      [
+        226,
+        1696
+      ]
+    ],
+    "leak_days_detected": 12,
+    "leak_days": 12,
+    "normal_days_alerted": 5,
+    "normal_days": 12,
+    "median_delay_minutes": 19.0
+  }
+}
