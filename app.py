@@ -11,7 +11,7 @@ import joblib
 import pandas as pd
 import streamlit as st
 import altair as alt
-from engine import APARTMENTS, new_simulation, new_live, sync_live, local_now, advance, set_mode, update_event, clock_label, stop_demo_water, ensure_apartments, restore_demo_connection
+from engine import APARTMENTS, new_simulation, new_live, sync_live, local_now, advance, set_mode, update_event, clock_label, stop_demo_water, ensure_apartments, restore_demo_connection, change_scenario, set_monitoring_state
 from i18n import translate, OUTCOMES
 from storage import save_simulation, load_incidents, update_saved_incident
 from engine import LOCAL_TZ
@@ -154,7 +154,7 @@ def monitor():
     st.subheader(t('Security dashboard — Building A'))
     c1,c2,c3 = st.columns([1,1,2])
     if c1.button(t('⏸ Pause' if sim['running'] else '▶ Start automatically'),key='play',width='stretch'):
-        sim['running'] = not sim['running']
+        set_monitoring_state(sim,bundle,not sim['running'])
         sim['last_tick'] = time.monotonic()
     step = c2.button(t('+15 minutes'),key='step',width='stretch',disabled=live or sim['minute']>=1439)
     if step:
@@ -204,7 +204,7 @@ def monitor():
         for column,label,value in [(0,'💧 Start leak','leak'),(1,'🚿 Shower — 15 minutes','shower'),
                                    (0,'📡 Disconnect sensor','offline'),(1,'✓ Restore normal','normal')]:
             if controls[column].button(t(label),key='scenario_'+value,width='stretch'):
-                set_mode(sim,apt,value); persist_current(); st.rerun()
+                change_scenario(sim,bundle,apt,value); persist_current(); st.rerun()
         st.caption(t('Changes apply from the next reading. Leak: +0.7 L/min. Shower: 7 L/min for 15 minutes, then ends automatically.'))
         frame = sim['frames'][apt].iloc[:sim['minute']+1].tail(180).copy()
         origin = sim['origin'].replace(tzinfo=None) if live else pd.Timestamp('2026-01-01')
@@ -248,6 +248,7 @@ def monitor():
                 owner_contact(event['apartment'],f"contact_{event['id']}",event=event)
                 if event['status']=='new':
                     if st.button(t('Acknowledge'),key=f"ack_{event['id']}",width='stretch'):
+                        if live: sync_live(sim,bundle,force=True)
                         update_event(sim,event['id'],'ack'); persist_current(); st.rerun()
                 else: st.caption(t('✓ Acknowledged by security — inspection needed'))
                 with st.expander(t('Complete inspection')):
@@ -263,6 +264,7 @@ def monitor():
                     outcome = st.selectbox(t('Outcome'),options,format_func=outcome_label,key=outcome_key)
                     note = st.text_input(t('Staff note'),key=f"note_{event['id']}",max_chars=1000)
                     if st.button(t('Resolve'),key=f"done_{event['id']}"):
+                        if live: sync_live(sim,bundle,force=True)
                         update_event(sim,event['id'],'resolve',outcome,note); persist_current(); st.rerun()
         new_ids = {e['id'] for e in pending if e['status']=='new'}
         played = st.session_state.setdefault('played_events',set())

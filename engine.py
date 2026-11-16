@@ -84,12 +84,26 @@ def new_live(now=None):
     return sim
 
 
-def sync_live(sim, bundle, now=None):
+def sync_live(sim, bundle, now=None, force=False):
     now = now or local_now()
     target = int((now.replace(second=0,microsecond=0)-sim['origin']).total_seconds()//60)
-    if not sim['last_snapshot'] or (sim['running'] and target > sim['minute']):
+    if not sim['last_snapshot'] or ((sim['running'] or force) and target > sim['minute']):
         advance(sim,bundle,max(0,target-sim['minute']))
         sim['last_live'] = now.replace(second=0,microsecond=0)
+
+
+def change_scenario(sim, bundle, apt, mode, now=None):
+    """Finish elapsed readings under the OLD scenario before applying a new one."""
+    if sim.get('live'):
+        sync_live(sim,bundle,now=now,force=True)
+    set_mode(sim,apt,mode)
+
+
+def set_monitoring_state(sim, bundle, running, now=None):
+    """Resume at the wall clock without backdating subsequent scenario changes."""
+    if sim.get('live'):
+        sync_live(sim,bundle,now=now,force=True)
+    sim['running'] = running
 
 
 def new_simulation():

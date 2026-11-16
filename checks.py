@@ -15,7 +15,7 @@ from streamlit.testing.v1 import AppTest
 from contacts import get_contact, save_contact, contact_links
 from urllib.parse import urlparse, parse_qs
 from storage import save_simulation, load_incidents, load_activity, update_saved_incident
-from engine import make_day, features, new_simulation, advance, set_mode, update_event, new_live, sync_live, LOCAL_TZ, APARTMENTS, ensure_apartments, restore_demo_connection
+from engine import make_day, features, new_simulation, advance, set_mode, update_event, new_live, sync_live, LOCAL_TZ, APARTMENTS, ensure_apartments, restore_demo_connection, change_scenario, set_monitoring_state
 
 ROOT = Path(__file__).resolve().parent
 BUNDLE = joblib.load(ROOT/'artifacts/water_model.joblib')
@@ -210,6 +210,70 @@ class EngineTests(unittest.TestCase):
         ensure_apartments(sim,BUNDLE)
         self.assertIn('14',sim['last_snapshot'])
         self.assertEqual(sim['events'][0],saved_event)
+
+    def test_live_scenario_after_pause_does_not_backdate_leak(self):
+        start = datetime(2026,11,16,2,0,tzinfo=LOCAL_TZ)
+        sim = new_live(start); sync_live(sim,BUNDLE,start)
+        set_monitoring_state(sim,BUNDLE,False,now=start)
+        later = start+timedelta(minutes=30)
+        change_scenario(sim,BUNDLE,'03','leak',now=later)
+        self.assertEqual(sim['minute'],150)
+        self.assertFalse(sim['running'])
+        self.assertFalse(sim['frames']['03'].loc[121:150,'truth'].any())
+        self.assertFalse([e for e in sim['events'] if e['apartment']=='03'])
+        set_monitoring_state(sim,BUNDLE,True,now=later)
+        sync_live(sim,BUNDLE,later+timedelta(minutes=1))
+        self.assertEqual(sim['frames']['03'].loc[151,'truth'],1)
+        self.assertEqual(sim['last_snapshot']['03']['duration'],1)
+        sync_live(sim,BUNDLE,later+timedelta(minutes=20))
+        event = next(e for e in sim['events'] if e['apartment']=='03')
+        self.assertEqual(event['start'],170)
+        self.assertEqual(event['duration'],20)
+
+    def test_paused_leak_stops_at_action_time_not_at_pause_time(self):
+        start = datetime(2026,11,16,2,0,tzinfo=LOCAL_TZ)
+        sim = new_live(start); sync_live(sim,BUNDLE,start)
+        change_scenario(sim,BUNDLE,'03','leak',now=start)
+        set_monitoring_state(sim,BUNDLE,False,now=start)
+        later = start+timedelta(minutes=30)
+        change_scenario(sim,BUNDLE,'03','normal',now=later)
+        self.assertTrue(sim['frames']['03'].loc[121:150,'truth'].all())
+        self.assertEqual(sim['events'][0]['start'],140)
+        set_monitoring_state(sim,BUNDLE,True,now=later)
+        sync_live(sim,BUNDLE,later+timedelta(minutes=1))
+        self.assertEqual(sim['frames']['03'].loc[151,'truth'],0)
+        self.assertFalse(sim['events'][0]['active'])
+
+    def test_paused_shower_at_midnight_has_full_fifteen_minutes(self):
+        start = datetime(2026,11,16,23,50,tzinfo=LOCAL_TZ)
+        sim = new_live(start); sync_live(sim,BUNDLE,start)
+        set_monitoring_state(sim,BUNDLE,False,now=start)
+        later = start+timedelta(minutes=20)
+        change_scenario(sim,BUNDLE,'03','shower',now=later)
+        self.assertEqual(sim['minute'],1450)
+        self.assertEqual(sim['mode_until']['03'],1465)
+        set_monitoring_state(sim,BUNDLE,True,now=later)
+        sync_live(sim,BUNDLE,later+timedelta(minutes=15))
+        self.assertTrue((sim['frames']['03'].loc[1451:1465,'flow']==7).all())
+        self.assertEqual(sim['modes']['03'],'normal')
+
+    def test_ui_live_scenario_uses_current_clock_after_pause(self):
+        start = datetime(2026,11,16,2,0,tzinfo=LOCAL_TZ)
+        with patch('engine.local_now',return_value=start):
+            app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+            app.button(key='play').click().run()
+        with patch('engine.local_now',return_value=start+timedelta(minutes=30)):
+            app.button(key='scenario_leak').click().run()
+            sim = app.session_state['simulation']
+            self.assertFalse(app.exception)
+            self.assertEqual(sim['minute'],150)
+            self.assertFalse(sim['running'])
+            self.assertFalse(sim['frames']['03'].loc[121:150,'truth'].any())
+            app.button(key='play').click().run()
+        with patch('engine.local_now',return_value=start+timedelta(minutes=31)):
+            app.run()
+            self.assertFalse(app.exception)
+            self.assertEqual(app.session_state['simulation']['last_snapshot']['03']['duration'],1)
 
     def test_live_clock_real_minutes_and_midnight(self):
         now = datetime(2026,11,16,23,59,20,tzinfo=LOCAL_TZ)

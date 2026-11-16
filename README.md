@@ -49,7 +49,7 @@ Select **Accelerated demo** first. The default **Live time** mode follows the re
 6. Try **Shower — 15 minutes**. It simulates 7 L/min for 15 minutes and then ends automatically.
 7. Download the incident report from **Incident history and report**.
 
-In accelerated autoplay, two seconds represent five virtual minutes. Every virtual minute is processed by the detector. The demo stops at 23:59; **Reset demo** starts a new session. Live-time monitoring continues across midnight.
+In accelerated autoplay, two seconds represent five virtual minutes. Every virtual minute is processed by the detector. The demo stops at 23:59; **Reset demo** starts a new session. Live-time monitoring continues across midnight. While monitoring is paused, resuming or changing a scenario first processes elapsed minutes using the previous scenario. The new scenario begins with the next reading; it is never backdated to the start of the pause. Inspection actions also synchronize the live clock before updating the incident.
 
 A flat line at zero means no water is flowing. A paused demo updates only after autoplay starts or a manual step is taken. Alert sound is optional and may be blocked by browser autoplay settings.
 
