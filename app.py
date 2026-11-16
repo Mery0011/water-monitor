@@ -5,12 +5,16 @@ import math
 import struct
 import time
 import wave
+import sqlite3
+from datetime import datetime
 import joblib
 import pandas as pd
 import streamlit as st
 import altair as alt
 from engine import APARTMENTS, new_simulation, new_live, sync_live, local_now, advance, set_mode, update_event, clock_label, stop_demo_water, ensure_apartments
 from i18n import translate, OUTCOMES
+from storage import save_simulation, load_incidents, update_saved_incident
+from engine import LOCAL_TZ
 
 ROOT = Path(__file__).resolve().parent
 language = st.session_state.get('language', 'en')
@@ -38,6 +42,15 @@ metrics = json.loads((ROOT/'artifacts/metrics.json').read_text())
 st.caption(t('PORTFOLIO PROTOTYPE • SYNTHETIC DATA • NO REAL METER CONNECTED'))
 st.title('💧 '+t('Water Monitor'))
 st.write(t('Water usage and unusual activity, from apartments to the security desk.'))
+def persist_current():
+    if 'simulation' in st.session_state:
+        try:
+            save_simulation(st.session_state['simulation'])
+        except (OSError,sqlite3.Error):
+            st.error(t('Could not save to the database. Check disk space and folder permissions, then retry.'))
+            st.stop()
+
+
 with st.sidebar:
     st.header(t('About this project'))
     st.write(t('**Model:** Isolation Forest + 20 minutes of continuous flow.'))
@@ -45,6 +58,7 @@ with st.sidebar:
     st.info(t('The AI flags unusual usage for inspection; it does not confirm a leak.'))
     st.caption(t('All results use synthetic scenarios. Performance in a real building has not been measured.'))
     if st.button(t('Reset demo'),key='reset',width='stretch'):
+        persist_current()
         st.session_state.pop('simulation',None)
         st.session_state['played_events'] = set()
         st.rerun()
@@ -58,6 +72,7 @@ if st.session_state.get('time_mode') not in (None,'live','demo'):
 mode = st.radio(t('Time mode'),['live','demo'],format_func=lambda v:t('Live time' if v=='live' else 'Accelerated demo'),horizontal=True,key='time_mode')
 live = mode=='live'
 if 'simulation' not in st.session_state or st.session_state['simulation'].get('live',False)!=live:
+    persist_current()
     st.session_state['simulation'] = new_live() if live else new_simulation()
     st.session_state['played_events'] = set()
 
@@ -111,6 +126,7 @@ def monitor():
             c3.info(t('The day has ended. Use Reset demo to start again.'))
         else:
             c3.caption(t('Try: Apartment 03 → Start leak → click +15 minutes twice.'))
+    persist_current()
     snap = sim['last_snapshot']
     offline = sum(s['offline'] for s in snap.values())
     active_water = {a for a,k in sim['open_events'] if k=='water'}
@@ -139,7 +155,7 @@ def monitor():
         for column,label,value in [(0,'💧 Start leak','leak'),(1,'🚿 Shower — 15 minutes','shower'),
                                    (0,'📡 Disconnect sensor','offline'),(1,'✓ Restore normal','normal')]:
             if controls[column].button(t(label),key='scenario_'+value,width='stretch'):
-                set_mode(sim,apt,value); st.rerun()
+                set_mode(sim,apt,value); persist_current(); st.rerun()
         st.caption(t('Changes apply from the next reading. Leak: +0.7 L/min. Shower: 7 L/min for 15 minutes, then ends automatically.'))
         frame = sim['frames'][apt].iloc[:sim['minute']+1].tail(180).copy()
         origin = sim['origin'].replace(tzinfo=None) if live else pd.Timestamp('2026-01-01')
@@ -182,7 +198,7 @@ def monitor():
                         minutes=event['duration'],flow=f"{event['flow']:.2f}"))
                 if event['status']=='new':
                     if st.button(t('Acknowledge'),key=f"ack_{event['id']}",width='stretch'):
-                        update_event(sim,event['id'],'ack'); st.rerun()
+                        update_event(sim,event['id'],'ack'); persist_current(); st.rerun()
                 else: st.caption(t('✓ Acknowledged by security — inspection needed'))
                 with st.expander(t('Complete inspection')):
                     if event['kind']=='water':
@@ -195,7 +211,7 @@ def monitor():
                     outcome = st.selectbox(t('Outcome'),options,format_func=outcome_label,key=outcome_key)
                     note = st.text_input(t('Staff note'),key=f"note_{event['id']}",max_chars=1000)
                     if st.button(t('Resolve'),key=f"done_{event['id']}"):
-                        update_event(sim,event['id'],'resolve',outcome,note); st.rerun()
+                        update_event(sim,event['id'],'resolve',outcome,note); persist_current(); st.rerun()
         new_ids = {e['id'] for e in pending if e['status']=='new'}
         played = st.session_state.setdefault('played_events',set())
         if sound and new_ids-played: st.audio(alarm(),format='audio/wav',autoplay=True)
@@ -225,7 +241,54 @@ def monitor():
                 continue
             activity.append({t('Time'):h['time'],t('Apartment'):h['apartment'],t('Action'):action})
         if activity: st.dataframe(pd.DataFrame(activity),hide_index=True)
-        st.caption(t('Demo history is stored in session memory and cleared on reset. CSV is generated only when you download it.'))
+        st.caption(t('Incident history is saved to a local SQLite database. Reset starts a new session without deleting saved records.'))
+
+
+    with st.expander(t('Saved history — all sessions')):
+        st.caption(t('Saved incidents remain after restarting the app. Previous sessions contain historical signals, not current sensor readings.'))
+        try:
+            saved = load_incidents()
+        except (OSError,sqlite3.Error):
+            st.error(t('Could not load saved history. Check folder permissions and retry.'))
+            return
+        records = [{t('Session'):e['run_id'][:8],t('ID'):e['id'],t('Apartment'):e['apartment'],
+            t('Mode'):t('Live time' if e['run_mode']=='live' else 'Accelerated demo'),
+            t('Type'):t('Offline' if e['kind']=='offline' else 'Possible water leak'),
+            t('Started'):clock_label(e['start']),t('Status'):t(STATUSES[e['status']]),
+            t('Outcome'):outcome_label(e['outcome']),t('Note'):e['note'],
+            t('Last saved'):datetime.fromisoformat(e['updated_at']).astimezone(LOCAL_TZ).strftime('%Y-%m-%d %H:%M:%S')}
+            for e in saved]
+        if records:
+            table = pd.DataFrame(records)
+            st.dataframe(table,hide_index=True,width='stretch')
+            st.download_button(t('Download saved history as CSV'),table.to_csv(index=False).encode('utf-8-sig'),
+                'saved-water-incidents.csv','text/csv',key='download_saved')
+        else:
+            st.info(t('No saved incidents yet.'))
+        previous = [e for e in saved if e['run_id']!=sim['_run_id'] and e['status']!='resolved']
+        if previous:
+            st.subheader(t('Pending inspections from previous sessions'))
+            choices = {f"{e['run_id']}:{e['id']}":e for e in previous}
+            chosen = st.selectbox(t('Saved incident'),list(choices),key='saved_incident',
+                format_func=lambda k:choices[k]['run_id'][:8]+f" / #{choices[k]['id']} / "+t('Apartment {apt}',apt=choices[k]['apartment']))
+            event = choices[chosen]
+            st.caption(t('Last known signal only. Completing this inspection does not change the current simulation.'))
+            prefix = f"saved_{event['run_id']}_{event['id']}"
+            if event['status']=='new' and st.button(t('Acknowledge'),key=prefix+'_ack'):
+                try:
+                    update_saved_incident(event['run_id'],event['id'],'ack')
+                except (OSError,sqlite3.Error,ValueError):
+                    st.error(t('Could not update the saved incident. Refresh and retry.')); st.stop()
+                st.rerun()
+            options = ['leak_fixed','normal_usage','unknown'] if event['kind']=='water' else ['connection_restored','device_check']
+            outcome = st.selectbox(t('Outcome'),options,format_func=outcome_label,key=prefix+'_outcome')
+            note = st.text_input(t('Staff note'),value=event['note'],max_chars=1000,key=prefix+'_note')
+            if st.button(t('Resolve'),key=prefix+'_resolve'):
+                try:
+                    update_saved_incident(event['run_id'],event['id'],'resolve',outcome,note)
+                except (OSError,sqlite3.Error,ValueError):
+                    st.error(t('Could not update the saved incident. Refresh and retry.')); st.stop()
+                st.rerun()
 
 monitor()
 st.divider()

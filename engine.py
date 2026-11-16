@@ -149,7 +149,7 @@ def advance(sim, bundle, steps=15):
                 if existing_kind != kind and event_id:
                     event = next(e for e in sim['events'] if e['id'] == event_id)
                     event['active'] = False
-                    event['end'] = minute
+                    event['end'] = int(minute)
                     del sim['open_events'][key]
             if kind:
                 key = (apt, kind)

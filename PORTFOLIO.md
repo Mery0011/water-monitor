@@ -16,7 +16,7 @@ The interface defaults to English and supports Korean and Uzbek. Live-time mode 
 
 Python, scikit-learn, pandas, NumPy, Altair, and Streamlit. The Isolation Forest model was trained on normal synthetic household-days, with separate validation and test days. Features use current and historical readings without looking ahead. The model runs locally without a paid AI API.
 
-The project includes synthetic telemetry generation, model training and evaluation, a multilingual dashboard, incident state management, CSV reports, and automated regression checks.
+The project includes synthetic telemetry generation, model training and evaluation, a multilingual dashboard, incident state management, CSV reports, a persistent SQLite incident archive, and automated regression checks.
 
 ## Results and lessons
 
@@ -28,7 +28,7 @@ These results describe this synthetic test set only; they do not demonstrate rel
 
 ## Scope and limitations
 
-This is a portfolio prototype with no physical meter connection or real-world validation. It does not provide SMS delivery, automatic water shutoff, a persistent audit database, or staff authentication and access roles. Incident history is stored in session memory unless exported. The model flags situations for inspection rather than confirming leaks.
+This is a portfolio prototype with no physical meter connection or real-world validation. It does not provide SMS delivery, automatic water shutoff, a production audit service, or staff authentication and access roles. Incident history, outcomes, and staff notes are saved in a local SQLite database and survive restarts; simulation telemetry and playback position remain in session memory. Archived inspections can be completed without changing the current simulation. The model flags situations for inspection rather than confirming leaks.
 
 ## Portfolio presentation
 

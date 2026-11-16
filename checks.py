@@ -2,10 +2,16 @@
 from pathlib import Path
 from datetime import datetime, timedelta
 import unittest
+import os
+import sqlite3
+import tempfile
+from unittest.mock import patch
+from contextlib import closing
 import joblib
 import numpy as np
 import pandas as pd
 from streamlit.testing.v1 import AppTest
+from storage import save_simulation, load_incidents, load_activity, update_saved_incident
 from engine import make_day, features, new_simulation, advance, set_mode, update_event, new_live, sync_live, LOCAL_TZ, APARTMENTS, ensure_apartments
 
 ROOT = Path(__file__).resolve().parent
@@ -13,6 +19,78 @@ BUNDLE = joblib.load(ROOT/'artifacts/water_model.joblib')
 
 
 class EngineTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix='water-db-check-')
+        self.addCleanup(directory.cleanup)
+        self.db_path = Path(directory.name)/'incidents.sqlite3'
+        env = patch.dict(os.environ,{'WATER_MONITOR_DB':str(self.db_path)})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_database_round_trip_and_separate_runs(self):
+        sim = new_simulation()
+        set_mode(sim,'03','leak'); advance(sim,BUNDLE,60)
+        run_id = save_simulation(sim)
+        save_simulation(sim)
+        self.assertEqual(len(load_incidents()),1)
+        update_event(sim,1,'ack'); save_simulation(sim)
+        note = "수리 완료 — ta’mirlandi; '); DROP TABLE incidents; --"
+        update_event(sim,1,'resolve','leak_fixed',note); save_simulation(sim)
+        loaded = load_incidents()[0]
+        self.assertEqual(loaded['status'],'resolved')
+        self.assertEqual(loaded['outcome'],'leak_fixed')
+        self.assertEqual(loaded['note'],note)
+        self.assertFalse(loaded['active'])
+        self.assertEqual(load_activity()[-1]['action'],'resolve')
+        other = new_simulation()
+        set_mode(other,'15','leak'); advance(other,BUNDLE,60)
+        other_id = save_simulation(other)
+        self.assertNotEqual(run_id,other_id)
+        self.assertEqual(len(load_incidents()),2)
+        self.assertEqual(len(load_incidents(exclude_run=other_id)),1)
+        with closing(sqlite3.connect(self.db_path)) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM incidents').fetchone()[0],2)
+
+    def test_saved_incident_can_be_completed_after_restart(self):
+        sim = new_simulation()
+        set_mode(sim,'03','leak'); advance(sim,BUNDLE,60)
+        run_id = save_simulation(sim)
+        update_saved_incident(run_id,1,'ack')
+        self.assertEqual(load_incidents()[0]['status'],'ack')
+        update_saved_incident(run_id,1,'resolve','leak_fixed','Saved after restart')
+        self.assertEqual(load_incidents()[0]['note'],'Saved after restart')
+        with self.assertRaises(ValueError):
+            update_saved_incident(run_id,1,'ack')
+        self.assertEqual(load_activity()[-1]['source'],'archive')
+
+    def test_failed_save_is_not_marked_successful(self):
+        sim = new_simulation()
+        with self.assertRaises(sqlite3.Error):
+            save_simulation(sim,path=self.db_path.parent)
+        self.assertNotIn('_saved_digest',sim)
+
+    def test_ui_saved_pending_incident_survives_reset_and_new_session(self):
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        app.radio[0].set_value('demo').run()
+        app.button(key='scenario_leak').click().run()
+        advance(app.session_state['simulation'],BUNDLE,60); app.run()
+        run_id = app.session_state['simulation']['_run_id']
+        self.assertEqual(len(load_incidents()),1)
+        app.button(key='reset').click().run()
+        self.assertEqual(len(load_incidents()),1)
+        self.assertNotEqual(app.session_state['simulation']['_run_id'],run_id)
+        # New AppTest represents a new browser session, with a fresh simulation.
+        reopened = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        self.assertFalse(reopened.exception)
+        prefix = f'saved_{run_id}_1'
+        reopened.button(key=prefix+'_ack').click().run()
+        self.assertEqual(load_incidents()[0]['status'],'ack')
+        reopened.text_input(key=prefix+'_note').input('Restart inspection').run()
+        reopened.button(key=prefix+'_resolve').click().run()
+        self.assertFalse(reopened.exception)
+        self.assertEqual(load_incidents()[0]['status'],'resolved')
+        self.assertEqual(load_incidents()[0]['note'],'Restart inspection')
+
     def test_fifteen_apartments_and_existing_session_upgrade(self):
         sim = new_simulation()
         self.assertEqual(APARTMENTS, [f'{i:02d}' for i in range(1,16)])

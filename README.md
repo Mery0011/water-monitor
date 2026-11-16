@@ -13,6 +13,7 @@ A local portfolio prototype that flags unusual apartment water usage for securit
 - Leak, 15-minute shower, normal usage, and sensor disconnection scenarios.
 - Apartment status cards, flow charts, optional alert sounds, and incident history.
 - Acknowledge and resolve actions, staff notes, and CSV exports.
+- A local SQLite archive that retains incidents, outcomes, notes, and activity across resets and app restarts.
 - English by default, with Korean and Uzbek available through **Language / 언어 / Til**. Switching languages preserves the current session and staff notes.
 - Comparison of the AI-assisted detector against simple 20- and 60-minute rules.
 
@@ -81,7 +82,13 @@ The dashboard keeps an incident active until flow stops to avoid duplicate incid
 
 Incidents move through **New → Acknowledged → Resolved**. Signal activity is tracked separately from inspection status. Resolving an active water incident simulates repair; a later leak can create a new incident ID. Connection loss is a separate incident type, and missing readings break continuous-flow tracking.
 
-History and notes live in Streamlit session memory and can be lost when a session or server ends. Resetting clears the demo session. CSV downloads provide an exported copy. There is no persistent audit database, staff authentication, role system, SMS integration, automatic water shutoff, or physical sensor connection.
+Incidents, inspection outcomes, staff notes, and activity entries are saved to `data/water-monitor.sqlite3` using Python's built-in SQLite module. No extra service or database installation is needed. Writes are transactional, repeated saves do not duplicate incidents, and each session has a unique identifier so that incident numbers from different runs do not collide.
+
+Use **Saved history — all sessions** to view and export records after a reset or restart. **Pending inspections from previous sessions** lets staff acknowledge or resolve archived incidents. An archived signal is historical, not a current sensor reading; resolving it does not change the new simulation. Simulation frames and playback position are not restored after a restart.
+
+Resetting or changing time mode starts a new simulation without deleting saved history. The database and its journal files are excluded from Git. Keep the project folder writable, retain its `data/` directory when moving the project, and stop the app before copying the database for backup. No delete-history button is provided.
+
+The archive is a local, single-operator prototype, not a production audit service. There is no staff authentication, role system, SMS integration, automatic water shutoff, or physical sensor connection. Simultaneous operators and large historical datasets have not been validated.
 
 Long legitimate use can trigger alerts, while small or intermittent leaks may be missed. Security staff must inspect flagged situations. This prototype is not ready for unattended use in a real building.
 
@@ -94,7 +101,7 @@ From the repository root, after installing dependencies:
 .venv/bin/python checks.py
 ```
 
-Checks cover causal features, missing readings, short showers, incident creation and resolution, duplicate suppression, subsequent incidents, day boundaries, live time, Streamlit interactions, and language switching without losing incident state or notes.
+Checks cover causal features, missing readings, short showers, incident creation and resolution, duplicate suppression, subsequent incidents, day boundaries, live time, Streamlit interactions, language switching without losing incident state or notes, SQLite round trips, unique session IDs, repeated saves, save failures, and completing saved inspections after a fresh browser session.
 
 ## Project files
 
@@ -102,6 +109,8 @@ Checks cover causal features, missing readings, short showers, incident creation
 |---|---|
 | `app.py` | Streamlit security dashboard |
 | `engine.py` | Synthetic telemetry, features, detection, and incident state |
+| `storage.py` | SQLite incident persistence and archived inspection updates |
+| `data/water-monitor.sqlite3` | Local incident database, created automatically and excluded from Git |
 | `train.py` | Training, validation, and test evaluation |
 | `i18n.py` | English, Korean, and Uzbek interface translations |
 | `checks.py` | Regression checks |
@@ -117,4 +126,4 @@ Checks cover causal features, missing readings, short showers, incident creation
 
 ## Next steps
 
-Agree on a real meter's data format, pilot one sensor, collect labeled real-world incidents, and compare detectors again. A production system would also need persistent storage, staff access controls, network recovery and buffering, operating procedures, and appropriate permissions.
+Agree on a real meter's data format, pilot one sensor, collect labeled real-world incidents, and compare detectors again. A production system would also need managed backups and schema migrations, staff access controls, network recovery and buffering, operating procedures, and appropriate permissions.

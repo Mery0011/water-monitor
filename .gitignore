@@ -10,3 +10,7 @@ __pycache__/
 /korean-panel.png
 /live-time-screenshot.png
 /uzbek-panel.png
+
+# Local incident database and SQLite journal files.
+/data/*.sqlite3
+/data/*.sqlite3-*
