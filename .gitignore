@@ -3,3 +3,10 @@ __pycache__/
 .venv/
 .env
 .streamlit/secrets.toml
+
+# Local screenshots; keep only the curated documentation image in Git.
+/demo-chart-fixed.png
+/demo-screenshot.png
+/korean-panel.png
+/live-time-screenshot.png
+/uzbek-panel.png

@@ -4,7 +4,7 @@ A local portfolio prototype that flags unusual apartment water usage for securit
 
 **All water readings are synthetic. No real meter or valve is connected.** The prototype demonstrates a workflow; it does not establish real-world leak detection performance.
 
-![Water Monitor dashboard](english-panel.png)
+![Water Monitor dashboard](docs/images/english-panel.png)
 
 ## Features
 
