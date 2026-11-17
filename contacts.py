@@ -23,11 +23,19 @@ def get_contact(apartment,path=None):
     validate_contact(apartment,'Demo','','')
     with connection(path) as db:
         row = db.execute('SELECT * FROM contacts WHERE apartment=?',(apartment,)).fetchone()
+        if row is not None and row['is_demo'] and row['phone'] == f'+120255501{apartment}' and row['email'] == f'owner{apartment}@example.invalid':
+            db.execute('UPDATE contacts SET phone=?,email=?,updated_at=? WHERE apartment=?',
+                (f'+82100000{apartment.zfill(4)}',f'water.monitor.demo.owner{apartment}@gmail.com',utc_now(),apartment))
+            row = db.execute('SELECT * FROM contacts WHERE apartment=?',(apartment,)).fetchone()
+        if row is not None and row['is_demo'] and row['email'] == f'water.monitor.demo.owner{apartment}@gmail.com':
+            db.execute('UPDATE contacts SET email=?,updated_at=? WHERE apartment=?',
+                (f'owner{apartment}@gmail.com',utc_now(),apartment))
+            row = db.execute('SELECT * FROM contacts WHERE apartment=?',(apartment,)).fetchone()
         if row is None:
-            # Reserved example email domain and fictional NANP 555-01xx number.
+            # Sample Korean-format phone and Gmail address; demo actions stay disabled.
             db.execute('INSERT OR IGNORE INTO contacts VALUES(?,?,?,?,?,?)',
-                (apartment,f'Demo Resident {apartment}',f'+120255501{apartment}',
-                 f'owner{apartment}@example.invalid',1,utc_now()))
+                (apartment,f'Demo Resident {apartment}',f'+82100000{apartment.zfill(4)}',
+                 f'owner{apartment}@gmail.com',1,utc_now()))
             row = db.execute('SELECT * FROM contacts WHERE apartment=?',(apartment,)).fetchone()
     return dict(row)
 

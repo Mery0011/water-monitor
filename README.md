@@ -36,7 +36,7 @@ Open [http://127.0.0.1:8503](http://127.0.0.1:8503). Keep the terminal open; pre
 
 The trained model is included in `artifacts/`, so retraining is optional. The model runs locally with scikit-learn and requires no paid AI API, API key, or GPU. Only load joblib files from trusted sources.
 
-The existing macOS `start.command` launcher expects a virtual environment in the **parent directory** (`../.venv`). For a fresh clone with the environment created inside this repository, use the command above.
+On macOS, double-click `start.command` after the setup steps above. It uses `.venv` inside this project and works from any terminal working directory, including paths containing spaces. If the environment or dependencies are missing, it displays setup instructions instead of using a Python environment from another folder. After moving the project to another path, recreate `.venv` there because Python virtual environments are not portable.
 
 ## Two-minute demo
 
@@ -56,7 +56,7 @@ A flat line at zero means no water is flowing. A paused demo updates only after 
 
 ## Contacting an apartment owner
 
-Select an apartment and open **Contact owner**. All 15 apartments initially use clearly marked fictional contacts: example email addresses and reserved fictional telephone numbers. Calling and email buttons are disabled for sample contacts.
+Select an apartment and open **Contact owner**. All 15 apartments initially use clearly marked fictional contacts: Korean-format sample telephone numbers and sample Gmail addresses. Calling and email buttons are disabled for sample contacts.
 
 To use your own contact, edit the owner name, phone number and/or email, clear **Sample contact (disable calling and email)**, and click **Save contact**. Contacts are saved in the same local SQLite database as incidents and remain after demo resets or app restarts. The database is excluded from GitHub. Unused phone/email fields may be left blank; their corresponding buttons remain disabled.
 
@@ -109,6 +109,8 @@ From the repository root, after installing dependencies:
 ```sh
 .venv/bin/python train.py
 .venv/bin/python checks.py
+# macOS launcher checks (no real server is started):
+.venv/bin/python check_launcher.py
 ```
 
 Checks cover causal features, missing readings, short showers, incident creation and resolution, duplicate suppression, subsequent incidents, day boundaries, live time, Streamlit interactions, language switching without losing incident state or notes, SQLite round trips, unique session IDs, repeated saves, save failures, and completing saved inspections after a fresh browser session, contact persistence, disabled sample-contact actions, safe email-link encoding, stale-window saves, conflicting inspection notes, and legacy audit migration.
@@ -125,6 +127,8 @@ Checks cover causal features, missing readings, short showers, incident creation
 | `train.py` | Training, validation, and test evaluation |
 | `i18n.py` | English, Korean, and Uzbek interface translations |
 | `checks.py` | Regression checks |
+| `check_launcher.py` | macOS launcher checks with a stub Python executable |
+| `start.command` | macOS launcher using this project’s local virtual environment |
 | `artifacts/water_model.joblib` | Trained model and threshold |
 | `artifacts/metrics.json` | Evaluation results and dataset configuration |
 | `artifacts/example_day.csv` | Example synthetic test day |

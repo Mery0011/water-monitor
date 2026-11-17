@@ -97,6 +97,22 @@ def change_scenario(sim, bundle, apt, mode, now=None):
     if sim.get('live'):
         sync_live(sim,bundle,now=now,force=True)
     set_mode(sim,apt,mode)
+    if mode == 'offline':
+        # A manual disconnection is known immediately, even while paused.
+        minute = sim['minute']
+        sim['frames'][apt].loc[minute,['flow','truth']] = [np.nan,0]
+        water_id = sim['open_events'].pop((apt,'water'),None)
+        if water_id is not None:
+            water = next(e for e in sim['events'] if e['id'] == water_id)
+            water.update(active=False,end=minute)
+        if (apt,'offline') not in sim['open_events']:
+            sim['serial'] += 1
+            sim['events'].append({'id':sim['serial'],'apartment':apt,'kind':'offline',
+                'start':minute,'end':None,'active':True,'status':'new',
+                'outcome':'','note':'','duration':0,'flow':0})
+            sim['open_events'][(apt,'offline')] = sim['serial']
+        sim['last_snapshot'][apt].update(offline=True,flow=float('nan'),
+            duration=0,anomaly=False,baseline=False,score=0.0)
 
 
 def set_monitoring_state(sim, bundle, running, now=None):

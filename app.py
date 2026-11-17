@@ -27,6 +27,16 @@ st.markdown('''<style>
 .stApp{background:#f4f8fb} .block-container{max-width:1450px;padding-top:2rem}
 h1,h2,h3{color:#102c42} div[data-testid="stMetric"]{background:white;border:1px solid #dbe7ec;
 border-radius:12px;padding:16px} .stButton>button[kind="primary"]{background:#008e91;border:0}
+div[class*="st-key-apartment_card_"]{
+background:linear-gradient(145deg,#ffffff,#eaf8fb);
+border:1px solid #98cbd5!important;border-top:4px solid #008e91!important;
+border-radius:16px!important;padding:16px!important;
+box-shadow:0 6px 18px rgba(16,70,90,.13);
+transition:box-shadow .18s ease,transform .18s ease}
+div[class*="st-key-apartment_card_"]:hover{
+box-shadow:0 10px 24px rgba(16,70,90,.21);transform:translateY(-2px)}
+div[class*="st-key-apartment_card_"] [data-testid="stMarkdownContainer"] strong{
+color:#123d51;font-size:1.12rem}
 </style>''', unsafe_allow_html=True)
 _, language_column = st.columns([3,1])
 with language_column:
@@ -108,12 +118,10 @@ def owner_contact(apartment,key,event=None,editable=False):
             contact = get_contact(apartment)
         except (OSError,sqlite3.Error):
             st.error(t('Could not load owner contact. Check database permissions.')); return
-        name = t('Demo resident {apt}',apt=apartment) if contact['is_demo'] else contact['name']
+        name = t('Demo resident {apt}',apt=apartment) if contact['is_demo'] and contact['name'] == f'Demo Resident {apartment}' else contact['name']
         st.text(t('Owner: {name}',name=name))
         st.text(t('Phone: {phone}',phone=contact['phone'] or '—'))
         st.text(t('Email: {email}',email=contact['email'] or '—'))
-        if contact['is_demo']:
-            st.info(t('Sample contact only. Calling and email are disabled. Edit the apartment contact to use your own details.'))
         subject = t('Water inspection — Apartment {apt}',apt=apartment)
         body = (t('Hello, building security would like to check unusual water usage in Apartment {apt}. Please contact the security desk.',apt=apartment)
                 if event is None or event['kind']=='water' else
@@ -127,6 +135,8 @@ def owner_contact(apartment,key,event=None,editable=False):
         st.caption(t('Opens your phone or email application. Nothing is sent automatically.'))
         st.text(body)
         if editable:
+            if st.session_state.pop(key+'_saved',False):
+                st.success(t('Contact saved.'))
             with st.form(key+'_edit'):
                 st.caption(t('Owner contacts are saved locally in SQLite and excluded from GitHub.'))
                 owner_name = st.text_input(t('Owner name'),value=contact['name'],max_chars=80,key=key+'_name')
@@ -141,7 +151,20 @@ def owner_contact(apartment,key,event=None,editable=False):
                     except (OSError,sqlite3.Error):
                         st.error(t('Could not save owner contact. Check database permissions.'))
                     else:
+                        st.session_state[key+'_saved'] = True
                         st.rerun()
+
+
+def explain_incident(event):
+    st.markdown('**'+t('Why this alert?')+'**')
+    if event['kind'] == 'offline':
+        st.write(t('The sensor connection was lost. Water usage cannot be assessed without readings.'))
+        st.caption(t('Recommended: check the sensor power and network connection.'))
+    else:
+        st.write(t('At detection, water had flowed continuously for {minutes} minutes at {flow} L/min.',
+            minutes=event['duration'],flow=f"{event['flow']:.2f}"))
+        st.write(t('The model flagged unusual usage after at least 20 minutes of continuous flow. This does not confirm a leak.'))
+        st.caption(t('Recommended: contact the owner to check whether water is being used.'))
 
 
 def remember_inspection_draft(event_id,field,widget_key):
@@ -194,11 +217,12 @@ def monitor():
         for col,apt in zip(st.columns(5),APARTMENTS[row_start:row_start+5]):
             reading = snap[apt]
             with col:
-                st.markdown('**'+t('Apartment {apt}',apt=apt)+'**')
-                if reading['offline']: st.error(t('No connection'))
-                elif apt in active_water: st.warning(t('Inspection needed'))
-                else: st.success(t('Normal'))
-                st.caption(t('No reading') if reading['offline'] else f"{reading['flow']:.2f} L/min")
+                with st.container(border=True,key='apartment_card_'+apt):
+                    st.markdown('**'+t('Apartment {apt}',apt=apt)+'**')
+                    if reading['offline']: st.error(t('No connection'))
+                    elif apt in active_water: st.warning(t('Inspection needed'))
+                    else: st.success(t('Normal'))
+                    st.caption(t('No reading') if reading['offline'] else f"{reading['flow']:.2f} L/min")
     st.divider()
     left,right = st.columns([1.5,1],gap='large')
     with left:
@@ -262,9 +286,7 @@ def monitor():
                 st.warning(t('Offline' if event['kind']=='offline' else 'Possible water leak'))
                 st.caption(t('Started: {time} • {status}',time=clock_label(event['start']),
                     status=t('Signal ongoing' if event['active'] else 'Signal ended; inspection pending')))
-                if event['kind']=='water':
-                    st.write(t('At detection: {minutes} minutes of continuous flow, {flow} L/min.',
-                        minutes=event['duration'],flow=f"{event['flow']:.2f}"))
+                explain_incident(event)
                 owner_contact(event['apartment'],f"contact_{event['id']}",event=event)
                 if event['status']=='new':
                     if st.button(t('Acknowledge'),key=f"ack_{event['id']}",width='stretch'):
@@ -352,6 +374,7 @@ def monitor():
                 format_func=lambda k:choices[k]['run_id'][:8]+f" / #{choices[k]['id']} / "+t('Apartment {apt}',apt=choices[k]['apartment']))
             event = choices[chosen]
             st.caption(t('Last known signal only. Completing this inspection does not change the current simulation.'))
+            explain_incident(event)
             prefix = f"saved_{event['run_id']}_{event['id']}"
             owner_contact(event['apartment'],prefix+'_contact',event=event)
             if event['status']=='new' and st.button(t('Acknowledge'),key=prefix+'_ack'):
@@ -370,24 +393,40 @@ def monitor():
                     st.error(t('Could not update the saved incident. Refresh and retry.')); st.stop()
                 st.rerun()
 
-monitor()
-st.divider()
-st.subheader(t('Does the model outperform simple rules?'))
-st.caption(t('Tested on 24 separate synthetic household-days only. This is not evidence of real-building performance.'))
-rows = []
-for label,key in [('AI + 20 minutes','hybrid'),('20-minute rule','rule20'),('60-minute rule','baseline')]:
-    result = metrics[key]; report = result['classification']['leak']
-    rows.append({t('Method'):t(label),t('Precision'):f"{report['precision']:.1%}",
-        t('Recall'):f"{report['recall']:.1%}",t('F1'):f"{report['f1-score']:.1%}",
-        t('Leak days detected'):f"{result['leak_days_detected']}/{result['leak_days']}",
-        t('Normal days with alerts'):f"{result['normal_days_alerted']}/{result['normal_days']}",
-        t('Median delay (min)'):result['median_delay_minutes']})
-st.dataframe(pd.DataFrame(rows),hide_index=True,width='stretch')
-with st.expander(t('Training and limitations')):
-    for paragraph in [
-        'Isolation Forest was trained on 60 independent synthetic days without leaks. The threshold was selected on 24 validation days and evaluated on 24 separate test days. Demo data belongs to none of these sets.',
-        'The score threshold is at least the 95th percentile of normal training scores. Comparison with the 20-minute rule tests whether the model adds value; AI need not win every metric.',
-        'Precision and recall are measured per minute. A leak day is detected if at least one leak minute is flagged. Delay is calculated only for detected incidents.',
-        'Features include current flow, 15/60-minute averages, variability, continuous-flow duration, and time of day. This is a hybrid of a model and rules.']:
-        st.write(t(paragraph))
-    st.warning(t('Long normal usage can trigger alerts. Small or intermittent leaks may be missed. This prototype does not shut off water, send SMS, or make decisions for security staff. Real-world validation and permissions are future work.'))
+dashboard_tab,results_tab = st.tabs([t('Dashboard'),t('Model results')])
+with dashboard_tab:
+    monitor()
+with results_tab:
+    st.header(t('Model results'))
+    st.caption(t('Fixed test results — demo actions do not change these numbers.'))
+    ai = metrics['hybrid']
+    a,b,c,d = st.columns(4)
+    a.metric(t('Leak days detected'),f"{ai['leak_days_detected']}/{ai['leak_days']}")
+    b.metric(t('Leak days missed'),ai['leak_days']-ai['leak_days_detected'])
+    c.metric(t('Normal days with alerts'),f"{ai['normal_days_alerted']}/{ai['normal_days']}")
+    d.metric(t('Median delay (min)'),ai['median_delay_minutes'])
+    st.info(t('All leak days were detected, but some leak minutes were missed. The 20-minute rule performed slightly better than AI on this test.'))
+    st.subheader(t('Minute-level predictions'))
+    normal_correct,false_alert,missed,detected = [n for row in ai['confusion_matrix'] for n in row]
+    counts = pd.DataFrame({t('Prediction result'):[t('Normal minutes correctly identified'),t('Normal minutes flagged'),t('Leak minutes missed'),t('Leak minutes detected')],t('Minutes'):[normal_correct,false_alert,missed,detected]})
+    st.dataframe(counts,hide_index=True,width='stretch')
+    st.caption(t('Day-level detection means at least one leak minute was flagged; it does not mean every leak minute was detected.'))
+    st.subheader(t('Does the model outperform simple rules?'))
+    st.caption(t('Tested on 24 separate synthetic household-days only. This is not evidence of real-building performance.'))
+    rows = []
+    for label,key in [('AI + 20 minutes','hybrid'),('20-minute rule','rule20'),('60-minute rule','baseline')]:
+        result = metrics[key]; report = result['classification']['leak']
+        rows.append({t('Method'):t(label),t('Precision'):f"{report['precision']:.1%}",
+            t('Recall'):f"{report['recall']:.1%}",t('F1'):f"{report['f1-score']:.1%}",
+            t('Leak days detected'):f"{result['leak_days_detected']}/{result['leak_days']}",
+            t('Normal days with alerts'):f"{result['normal_days_alerted']}/{result['normal_days']}",
+            t('Median delay (min)'):result['median_delay_minutes']})
+    st.dataframe(pd.DataFrame(rows),hide_index=True,width='stretch')
+    with st.expander(t('Training and limitations')):
+        for paragraph in [
+            'Isolation Forest was trained on 60 independent synthetic days without leaks. The threshold was selected on 24 validation days and evaluated on 24 separate test days. Demo data belongs to none of these sets.',
+            'The score threshold is at least the 95th percentile of normal training scores. Comparison with the 20-minute rule tests whether the model adds value; AI need not win every metric.',
+            'Precision and recall are measured per minute. A leak day is detected if at least one leak minute is flagged. Delay is calculated only for detected incidents.',
+            'Features include current flow, 15/60-minute averages, variability, continuous-flow duration, and time of day. This is a hybrid of a model and rules.']:
+            st.write(t(paragraph))
+        st.warning(t('Long normal usage can trigger alerts. Small or intermittent leaks may be missed. This prototype does not shut off water, send SMS, or make decisions for security staff. Real-world validation and permissions are future work.'))

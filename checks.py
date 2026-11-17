@@ -200,6 +200,22 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertEqual(app.text_input(key='owner_03_name').label,'Xonadon egasining ismi')
 
+    def test_saved_sample_owner_name_is_visible_after_reopening(self):
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        app.text_input(key='owner_03_name').input('Kim Minjun')
+        app.text_input(key='owner_03_phone').input('+82 10-1234-5678')
+        app.text_input(key='owner_03_email').input('water.demo@gmail.com')
+        next(b for b in app.button if b.label=='Save contact').click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(get_contact('03')['name'],'Kim Minjun')
+        self.assertEqual(get_contact('03')['phone'],'+821012345678')
+        self.assertTrue(get_contact('03')['is_demo'])
+        self.assertTrue(any(x.value=='Contact saved.' for x in app.success))
+        self.assertTrue(any(x.value=='Owner: Kim Minjun' for x in app.text))
+        reopened = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        self.assertEqual(reopened.text_input(key='owner_03_name').value,'Kim Minjun')
+        self.assertTrue(any(x.value=='Owner: Kim Minjun' for x in reopened.text))
+
     def test_fifteen_apartments_and_existing_session_upgrade(self):
         sim = new_simulation()
         self.assertEqual(APARTMENTS, [f'{i:02d}' for i in range(1,16)])
@@ -390,6 +406,51 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(sim['last_snapshot']['03']['offline'])
         self.assertEqual(sim['modes']['03'],'normal')
         self.assertEqual(next(m for m in app.metric if m.label=='Offline').value,'0')
+
+    def test_disconnect_alert_is_immediate_while_paused_and_not_duplicated(self):
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        app.radio[0].set_value('demo').run()
+        minute = app.session_state['simulation']['minute']
+        app.button(key='scenario_offline').click().run()
+        self.assertFalse(app.exception)
+        sim = app.session_state['simulation']
+        self.assertEqual(sim['minute'],minute)
+        self.assertTrue(sim['last_snapshot']['03']['offline'])
+        self.assertEqual(len(sim['events']),1)
+        self.assertEqual(sim['events'][0]['kind'],'offline')
+        self.assertEqual(next(m for m in app.metric if m.label=='Offline').value,'1')
+        app.button(key='scenario_offline').click().run()
+        app.button(key='step').click().run()
+        self.assertEqual(len(app.session_state['simulation']['events']),1)
+
+    def test_alert_explanations_use_detection_values_and_translate(self):
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        app.radio[0].set_value('demo').run()
+        app.button(key='scenario_leak').click().run()
+        app.button(key='step').click().run()
+        app.button(key='step').click().run()
+        self.assertFalse(app.exception)
+        self.assertTrue(any('This does not confirm a leak.' in x.value for x in app.markdown))
+        app.button(key='scenario_offline').click().run()
+        self.assertTrue(any('Water usage cannot be assessed without readings.' in x.value for x in app.markdown))
+        for language,title in [('uz','Nega ogohlantirish chiqdi?'),('ko','이 알림이 발생한 이유')]:
+            app.selectbox(key='language').set_value(language).run()
+            self.assertFalse(app.exception)
+            self.assertTrue(any(title in x.value for x in app.markdown))
+
+    def test_model_results_match_saved_test_metrics_in_all_languages(self):
+        import json
+        metrics = json.loads((ROOT/'artifacts/metrics.json').read_text())['hybrid']
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        self.assertFalse(app.exception)
+        self.assertEqual([tab.label for tab in app.tabs],['Dashboard','Model results'])
+        self.assertEqual(next(m.value for m in app.metric if m.label=='Leak days detected'),f"{metrics['leak_days_detected']}/{metrics['leak_days']}")
+        self.assertEqual(next(m.value for m in app.metric if m.label=='Leak days missed'),'0')
+        self.assertTrue(any('slightly better than AI' in item.value for item in app.info))
+        for language,title in [('uz','Model natijalari'),('ko','모델 결과')]:
+            app.selectbox(key='language').set_value(language).run()
+            self.assertFalse(app.exception)
+            self.assertEqual(app.tabs[1].label,title)
 
     def test_offline_and_recovery(self):
         sim = new_simulation()

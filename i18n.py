@@ -23,6 +23,7 @@ KO = {
     'Owner name':'세대주 이름',
     'Phone number':'전화번호',
     'Email address':'이메일 주소',
+    'Contact saved.':'연락처가 저장되었습니다.',
     'Sample contact (disable calling and email)':'예시 연락처 (전화 및 이메일 비활성화)',
     'Save contact':'연락처 저장',
     'Enter an owner name and valid phone/email, or leave unused contact fields blank.':'이름과 유효한 전화번호 또는 이메일을 입력하세요. 사용하지 않는 연락처는 비워 두세요.',
@@ -133,6 +134,7 @@ UZ = {
     'Owner name':'Xonadon egasining ismi',
     'Phone number':'Telefon raqami',
     'Email address':'Email manzili',
+    'Contact saved.':'Kontakt saqlandi.',
     'Sample contact (disable calling and email)':'Namunaviy kontakt (qo‘ng‘iroq va email o‘chiriladi)',
     'Save contact':'Kontaktni saqlash',
     'Enter an owner name and valid phone/email, or leave unused contact fields blank.':'Ism va to‘g‘ri telefon/email kiriting yoki foydalanilmaydigan kontakt maydonini bo‘sh qoldiring.',
@@ -218,6 +220,12 @@ UZ = {
     'Features include current flow, 15/60-minute averages, variability, continuous-flow duration, and time of day. This is a hybrid of a model and rules.':'Belgilar: joriy sarf, 15/60 daqiqalik o‘rtacha sarf, o‘zgaruvchanlik, uzluksiz oqim davomiyligi va kun vaqti. Model qoidalar bilan birga ishlaydi.',
     'Long normal usage can trigger alerts. Small or intermittent leaks may be missed. This prototype does not shut off water, send SMS, or make decisions for security staff. Real-world validation and permissions are future work.':'Uzoq oddiy foydalanish ham signal berishi mumkin. Kichik yoki uzilib oqadigan sizishlar o‘tkazib yuborilishi mumkin. Prototip suvni yopmaydi, SMS yubormaydi va security o‘rniga qaror qilmaydi. Haqiqiy sinov va ruxsatlar keyingi bosqich.',
 }
+
+KO.update({'Why this alert?': '이 알림이 발생한 이유', 'The sensor connection was lost. Water usage cannot be assessed without readings.': '센서 연결이 끊겼습니다. 측정값 없이는 물 사용량을 판단할 수 없습니다.', 'Recommended: check the sensor power and network connection.': '권장 조치: 센서 전원과 네트워크 연결을 확인하세요.', 'At detection, water had flowed continuously for {minutes} minutes at {flow} L/min.': '감지 당시 {minutes}분 동안 물이 연속으로 흐르고 있었으며 유량은 {flow} L/min이었습니다.', 'The model flagged unusual usage after at least 20 minutes of continuous flow. This does not confirm a leak.': '모델이 최소 20분의 연속 흐름 후 비정상 사용을 감지했습니다. 누수가 확정된 것은 아닙니다.', 'Recommended: contact the owner to check whether water is being used.': '권장 조치: 세대주에게 연락하여 물 사용 여부를 확인하세요.'})
+UZ.update({'Why this alert?': 'Nega ogohlantirish chiqdi?', 'The sensor connection was lost. Water usage cannot be assessed without readings.': 'Sensor aloqasi uzilgan. O‘lchovlarsiz suv sarfini baholab bo‘lmaydi.', 'Recommended: check the sensor power and network connection.': 'Tavsiya: sensor quvvati va tarmoq ulanishini tekshiring.', 'At detection, water had flowed continuously for {minutes} minutes at {flow} L/min.': 'Aniqlangan paytda suv {minutes} daqiqadan beri uzluksiz oqayotgan edi. O‘sha paytdagi sarf: {flow} L/min.', 'The model flagged unusual usage after at least 20 minutes of continuous flow. This does not confirm a leak.': 'Kamida 20 daqiqa uzluksiz oqimdan so‘ng model noodatiy sarfni aniqladi. Bu sizish tasdiqlandi degani emas.', 'Recommended: contact the owner to check whether water is being used.': 'Tavsiya: suv ishlatilayotganini tekshirish uchun xonadon egasi bilan bog‘laning.'})
+
+KO.update({'Dashboard': '대시보드', 'Model results': '모델 결과', 'Fixed test results — demo actions do not change these numbers.': '고정된 테스트 결과입니다. 데모 조작은 이 수치를 변경하지 않습니다.', 'Leak days missed': '놓친 누수 일수', 'All leak days were detected, but some leak minutes were missed. The 20-minute rule performed slightly better than AI on this test.': '모든 누수 일수를 감지했지만 일부 누수 분은 놓쳤습니다. 이 테스트에서는 20분 규칙이 AI보다 약간 더 나았습니다.', 'Minute-level predictions': '분 단위 예측', 'Prediction result': '예측 결과', 'Minutes': '분', 'Normal minutes correctly identified': '정상으로 정확히 분류한 분', 'Normal minutes flagged': '경고가 발생한 정상 분', 'Leak minutes missed': '놓친 누수 분', 'Leak minutes detected': '감지한 누수 분', 'Day-level detection means at least one leak minute was flagged; it does not mean every leak minute was detected.': '일 단위 감지는 최소 1분의 누수를 감지했다는 뜻이며 모든 누수 분을 감지했다는 의미는 아닙니다.'})
+UZ.update({'Dashboard': 'Boshqaruv paneli', 'Model results': 'Model natijalari', 'Fixed test results — demo actions do not change these numbers.': 'Bu saqlangan test natijalari. Demo amallari bu raqamlarni o‘zgartirmaydi.', 'Leak days missed': 'O‘tkazib yuborilgan sizishli kunlar', 'All leak days were detected, but some leak minutes were missed. The 20-minute rule performed slightly better than AI on this test.': 'Barcha sizishli kunlar topilgan, lekin ayrim sizish daqiqalari o‘tkazib yuborilgan. Bu testda 20 daqiqalik qoida AIdan biroz yaxshiroq natija bergan.', 'Minute-level predictions': 'Daqiqalar bo‘yicha natijalar', 'Prediction result': 'Natija', 'Minutes': 'Daqiqalar', 'Normal minutes correctly identified': 'To‘g‘ri aniqlangan odatiy daqiqalar', 'Normal minutes flagged': 'Signal berilgan odatiy daqiqalar', 'Leak minutes missed': 'O‘tkazib yuborilgan sizish daqiqalari', 'Leak minutes detected': 'Topilgan sizish daqiqalari', 'Day-level detection means at least one leak minute was flagged; it does not mean every leak minute was detected.': 'Kun topilgan degani kamida bir sizish daqiqasida signal chiqqanidir; barcha sizish daqiqalari topilgan degani emas.'})
 
 OUTCOMES = {'leak_fixed':'Leak fixed','leak_confirmed':'Leak confirmed','normal_usage':'Normal usage',
             'unknown':'Cause unknown','connection_restored':'Connection restored',
