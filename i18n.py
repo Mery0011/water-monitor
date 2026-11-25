@@ -236,6 +236,9 @@ UZ.update({'Leak fixed stops the simulated leak. Normal usage completes inspecti
 KO['Date unavailable'] = '날짜 정보 없음'
 UZ['Date unavailable'] = 'Sana saqlanmagan'
 
+KO['Owner contacts are saved in the configured database and excluded from GitHub.'] = '세대주 연락처는 설정된 데이터베이스에 저장되며 GitHub에는 포함되지 않습니다.'
+UZ['Owner contacts are saved in the configured database and excluded from GitHub.'] = 'Kontaktlar sozlangan bazada saqlanadi va GitHub’ga yuborilmaydi.'
+
 OUTCOMES = {'leak_fixed':'Leak fixed','leak_confirmed':'Leak confirmed','normal_usage':'Normal usage',
             'unknown':'Cause unknown','connection_restored':'Connection restored',
             'device_check':'Device inspection required'}

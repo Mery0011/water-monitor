@@ -56,7 +56,7 @@ A flat line at zero means no water is flowing. A paused demo updates only after 
 
 ## Contacting an apartment owner
 
-Select an apartment and open **Contact owner**. All 15 apartments initially use clearly marked fictional contacts: Korean-format sample telephone numbers and sample Gmail addresses. Calling and email buttons are disabled for sample contacts.
+Select an apartment and open **Contact owner**. All 15 apartments initially use sample contacts: Korean-format sample telephone numbers and sample Gmail addresses. Calling and email buttons are disabled for sample contacts.
 
 To use your own contact, edit the owner name, phone number and/or email, clear **Sample contact (disable calling and email)**, and click **Save contact**. Contacts are saved in the same local SQLite database as incidents and remain after demo resets or app restarts. The database is excluded from GitHub. Unused phone/email fields may be left blank; their corresponding buttons remain disabled.
 
@@ -142,3 +142,12 @@ Checks cover causal features, missing readings, short showers, incident creation
 ## Next steps
 
 Agree on a real meter's data format, pilot one sensor, collect labeled real-world incidents, and compare detectors again. A production system would also need managed backups and schema migrations, staff access controls, network recovery and buffering, operating procedures, and appropriate permissions.
+
+## Cloud deployment and persistent storage
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for Streamlit Community Cloud + Supabase setup.
+Set `WATER_MONITOR_DATABASE_URL` privately in the environment or Streamlit Secrets
+to use PostgreSQL. Without it, the app keeps using local SQLite. An explicit
+`WATER_MONITOR_DB` path selects SQLite for local use and tests. Cloud database
+failures are reported instead of silently falling back to temporary storage.
+Application tables live in the unexposed `water_monitor` PostgreSQL schema.

@@ -22,7 +22,7 @@ if [[ ! -x "$python_bin" ]]; then
     wait_before_exit
 fi
 
-if ! "$python_bin" -c 'import streamlit, sklearn, pandas, numpy, joblib, altair' >/dev/null 2>&1; then
+if ! "$python_bin" -c 'import streamlit, sklearn, pandas, numpy, joblib, altair, psycopg' >/dev/null 2>&1; then
     print -r -- "Water Monitor: required Python packages could not be loaded."
     print -r -- "Open a terminal and run:"
     print -r -- "  cd ${(q)project_dir}"

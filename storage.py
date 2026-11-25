@@ -1,79 +1,14 @@
-"""SQLite incident archive. No model binaries or telemetry frames are serialized."""
-from contextlib import contextmanager
+"""Persistent incident archive (SQLite or PostgreSQL). No model binaries or telemetry frames are serialized."""
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 import json
-import os
-import sqlite3
 import uuid
 
 
-def database_path():
-    override = os.environ.get('WATER_MONITOR_DB')
-    return Path(override) if override else Path(__file__).resolve().parent/'data/water-monitor.sqlite3'
+from database import connection, database_path, DATABASE_ERRORS
 
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
-
-
-@contextmanager
-def connection(path=None):
-    path = Path(path) if path else database_path()
-    path.parent.mkdir(parents=True,exist_ok=True)
-    db = sqlite3.connect(path,timeout=10)
-    db.row_factory = sqlite3.Row
-    try:
-        db.execute('PRAGMA foreign_keys=ON')
-        db.execute('PRAGMA journal_mode=WAL')
-        db.executescript('''
-            CREATE TABLE IF NOT EXISTS contacts (
-                apartment TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                phone TEXT NOT NULL,
-                email TEXT NOT NULL,
-                is_demo INTEGER NOT NULL CHECK(is_demo IN (0,1)),
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS runs (
-                id TEXT PRIMARY KEY,
-                mode TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS incidents (
-                run_id TEXT NOT NULL REFERENCES runs(id),
-                local_id INTEGER NOT NULL,
-                payload TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                PRIMARY KEY(run_id,local_id)
-            );
-            CREATE TABLE IF NOT EXISTS activity_stream (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                run_id TEXT NOT NULL REFERENCES runs(id),
-                source TEXT NOT NULL,
-                source_sequence INTEGER NOT NULL,
-                payload TEXT NOT NULL,
-                UNIQUE(run_id,source,source_sequence)
-            );
-            CREATE TABLE IF NOT EXISTS activity (
-                run_id TEXT NOT NULL REFERENCES runs(id),
-                sequence INTEGER NOT NULL,
-                payload TEXT NOT NULL,
-                PRIMARY KEY(run_id,sequence)
-            );
-        ''')
-        # Import the old audit table without mixing simulation and archive
-        # sequence numbers. Existing databases need no destructive migration.
-        db.execute("""INSERT OR IGNORE INTO activity_stream
-            (run_id,source,source_sequence,payload)
-            SELECT run_id,CASE WHEN json_extract(payload,'$.source')='archive'
-                THEN 'archive' ELSE 'simulation' END,sequence,payload
-            FROM activity ORDER BY rowid""")
-        db.commit()
-        with db:
-            yield db
-    finally:
-        db.close()
 
 
 WORKFLOW_FIELDS = ('status','outcome','note')
@@ -96,8 +31,8 @@ def save_simulation(sim,path=None):
     reconciled,conflicts = {},[]
     rejected = set(sim.get('_rejected_history',[]))
     with connection(path) as db:
-        db.execute('BEGIN IMMEDIATE')
-        db.execute('INSERT OR IGNORE INTO runs VALUES(?,?,?)',
+        db.begin_write()
+        db.execute('INSERT INTO runs VALUES(?,?,?) ON CONFLICT DO NOTHING',
                    (run_id,'live' if sim.get('live') else 'demo',created))
         for event in sim['events']:
             if 'started_at' not in event:
@@ -133,8 +68,8 @@ def save_simulation(sim,path=None):
                     rejected.add(seq)
             if seq in rejected:
                 continue
-            db.execute("""INSERT OR IGNORE INTO activity_stream
-                (run_id,source,source_sequence,payload) VALUES(?,?,?,?)""",
+            db.execute("""INSERT INTO activity_stream
+                (run_id,source,source_sequence,payload) VALUES(?,?,?,?) ON CONFLICT DO NOTHING""",
                 (run_id,'simulation',seq,json.dumps(entry,ensure_ascii=False)))
     for event in sim['events']:
         event.update(reconciled[event['id']])
@@ -148,7 +83,7 @@ def load_incidents(path=None,exclude_run=None):
     with connection(path) as db:
         rows = db.execute('''SELECT i.*,r.mode,r.created_at FROM incidents i
             JOIN runs r ON r.id=i.run_id
-            WHERE (? IS NULL OR i.run_id != ?)
+            WHERE (CAST(? AS TEXT) IS NULL OR i.run_id != ?)
             ORDER BY r.created_at DESC,i.local_id DESC''',(exclude_run,exclude_run)).fetchall()
     records = []
     for row in rows:
@@ -167,7 +102,7 @@ def load_activity(path=None):
 def update_saved_incident(run_id,local_id,action,outcome='',note='',path=None):
     """Update archived workflow without inventing telemetry for a closed session."""
     with connection(path) as db:
-        db.execute('BEGIN IMMEDIATE')
+        db.begin_write()
         row = db.execute('SELECT payload FROM incidents WHERE run_id=? AND local_id=?',
                          (run_id,local_id)).fetchone()
         if row is None:
@@ -182,8 +117,8 @@ def update_saved_incident(run_id,local_id,action,outcome='',note='',path=None):
         # active is the last known signal state, not a live measurement.
         db.execute('UPDATE incidents SET payload=?,updated_at=? WHERE run_id=? AND local_id=?',
                    (json.dumps(event,ensure_ascii=False),utc_now(),run_id,local_id))
-        seq = db.execute("SELECT COALESCE(MAX(source_sequence),-1)+1 FROM activity_stream WHERE run_id=? AND source='archive'",
-                         (run_id,)).fetchone()[0]
+        seq = db.execute("SELECT COALESCE(MAX(source_sequence),-1)+1 AS next_sequence FROM activity_stream WHERE run_id=? AND source='archive'",
+                         (run_id,)).fetchone()['next_sequence']
         db.execute('INSERT INTO activity_stream (run_id,source,source_sequence,payload) VALUES(?,?,?,?)',(run_id,'archive',seq,json.dumps({
             'type':'event','time':utc_now(),'apartment':event['apartment'],
             'event_id':local_id,'action':action,'outcome':outcome,'note':note[:1000],

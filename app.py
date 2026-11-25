@@ -5,7 +5,6 @@ import math
 import struct
 import time
 import wave
-import sqlite3
 from datetime import datetime
 import joblib
 import pandas as pd
@@ -14,6 +13,7 @@ import altair as alt
 from engine import APARTMENTS, new_simulation, new_live, sync_live, local_now, advance, set_mode, update_event, clock_label, stop_demo_water, ensure_apartments, restore_demo_connection, change_scenario, set_monitoring_state
 from i18n import translate, OUTCOMES
 from storage import save_simulation, load_incidents, update_saved_incident
+from database import DATABASE_ERRORS
 from engine import LOCAL_TZ
 from contacts import get_contact, save_contact, contact_links
 
@@ -59,7 +59,7 @@ def persist_current():
             save_simulation(st.session_state['simulation'])
             if st.session_state['simulation'].get('_workflow_conflicts'):
                 st.session_state['storage_conflict_notice'] = True
-        except (OSError,sqlite3.Error):
+        except (OSError,*DATABASE_ERRORS):
             st.error(t('Could not save to the database. Check disk space and folder permissions, then retry.'))
             st.stop()
 
@@ -116,7 +116,7 @@ def owner_contact(apartment,key,event=None,editable=False):
     with st.expander(t('Contact owner')):
         try:
             contact = get_contact(apartment)
-        except (OSError,sqlite3.Error):
+        except (OSError,*DATABASE_ERRORS):
             st.error(t('Could not load owner contact. Check database permissions.')); return
         name = t('Demo resident {apt}',apt=apartment) if contact['is_demo'] and contact['name'] == f'Demo Resident {apartment}' else contact['name']
         st.text(t('Owner: {name}',name=name))
@@ -138,7 +138,7 @@ def owner_contact(apartment,key,event=None,editable=False):
             if st.session_state.pop(key+'_saved',False):
                 st.success(t('Contact saved.'))
             with st.form(key+'_edit'):
-                st.caption(t('Owner contacts are saved locally in SQLite and excluded from GitHub.'))
+                st.caption(t('Owner contacts are saved in the configured database and excluded from GitHub.'))
                 owner_name = st.text_input(t('Owner name'),value=contact['name'],max_chars=80,key=key+'_name')
                 phone = st.text_input(t('Phone number'),value=contact['phone'],max_chars=30,key=key+'_phone')
                 email = st.text_input(t('Email address'),value=contact['email'],max_chars=254,key=key+'_email')
@@ -148,7 +148,7 @@ def owner_contact(apartment,key,event=None,editable=False):
                         save_contact(apartment,owner_name,phone,email,is_demo=demo)
                     except ValueError:
                         st.error(t('Enter an owner name and valid phone/email, or leave unused contact fields blank.'))
-                    except (OSError,sqlite3.Error):
+                    except (OSError,*DATABASE_ERRORS):
                         st.error(t('Could not save owner contact. Check database permissions.'))
                     else:
                         st.session_state[key+'_saved'] = True
@@ -331,7 +331,7 @@ def monitor():
         st.caption(t('Saved incidents remain after restarting the app. Previous sessions contain historical signals, not current sensor readings.'))
         try:
             saved = load_incidents()
-        except (OSError,sqlite3.Error):
+        except (OSError,*DATABASE_ERRORS):
             st.error(t('Could not load saved history. Check folder permissions and retry.'))
             return
         records = [{t('Session'):e['run_id'][:8],t('ID'):e['id'],t('Apartment'):e['apartment'],
@@ -362,7 +362,7 @@ def monitor():
             if event['status']=='new' and st.button(t('Acknowledge'),key=prefix+'_ack'):
                 try:
                     update_saved_incident(event['run_id'],event['id'],'ack')
-                except (OSError,sqlite3.Error,ValueError):
+                except (OSError,*DATABASE_ERRORS,ValueError):
                     st.error(t('Could not update the saved incident. Refresh and retry.')); st.stop()
                 st.rerun()
             options = ['leak_fixed','normal_usage','unknown'] if event['kind']=='water' else ['connection_restored','device_check']
@@ -371,7 +371,7 @@ def monitor():
             if st.button(t('Save inspection' if outcome=='unknown' else 'Resolve'),key=prefix+'_resolve'):
                 try:
                     update_saved_incident(event['run_id'],event['id'],'resolve',outcome,note)
-                except (OSError,sqlite3.Error,ValueError):
+                except (OSError,*DATABASE_ERRORS,ValueError):
                     st.error(t('Could not update the saved incident. Refresh and retry.')); st.stop()
                 st.rerun()
 

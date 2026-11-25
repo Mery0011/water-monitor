@@ -33,7 +33,7 @@ def get_contact(apartment,path=None):
             row = db.execute('SELECT * FROM contacts WHERE apartment=?',(apartment,)).fetchone()
         if row is None:
             # Sample Korean-format phone and Gmail address; demo actions stay disabled.
-            db.execute('INSERT OR IGNORE INTO contacts VALUES(?,?,?,?,?,?)',
+            db.execute('INSERT INTO contacts VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING',
                 (apartment,f'Demo Resident {apartment}',f'+82100000{apartment.zfill(4)}',
                  f'owner{apartment}@gmail.com',1,utc_now()))
             row = db.execute('SELECT * FROM contacts WHERE apartment=?',(apartment,)).fetchone()
