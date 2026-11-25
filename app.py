@@ -24,6 +24,9 @@ def t(text, **values):
 
 st.set_page_config(page_title=t('Water Monitor'), page_icon='💧', layout='wide', initial_sidebar_state='collapsed')
 st.markdown('''<style>
+/* Keep the last reading visible while Streamlit refreshes the dashboard. */
+[data-testid="stElementContainer"][data-stale="true"]{
+opacity:1!important;filter:none!important;transition:none!important}
 .stApp{background:#f4f8fb} .block-container{max-width:1450px;padding-top:2rem}
 h1,h2,h3{color:#102c42} div[data-testid="stMetric"]{background:white;border:1px solid #dbe7ec;
 border-radius:12px;padding:16px} .stButton>button[kind="primary"]{background:#008e91;border:0}
