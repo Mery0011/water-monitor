@@ -208,7 +208,7 @@ def update_event(sim, event_id, action, outcome='', note=''):
     if action == 'ack' and event['status'] == 'new':
         event['status'] = 'ack'
     elif action == 'resolve' and event['status'] in ('new', 'ack') and outcome:
-        event.update(status='resolved', outcome=outcome, note=note[:1000])
+        event.update(status='ack' if event['kind']=='water' and outcome=='unknown' else 'resolved', outcome=outcome, note=note[:1000])
         stop_demo_water(sim,event)
         restore_demo_connection(sim,event)
     else:
@@ -220,7 +220,7 @@ def update_event(sim, event_id, action, outcome='', note=''):
 
 def stop_demo_water(sim, event):
     """Simulate repair without changing earlier readings or the wall clock."""
-    if event['kind'] != 'water' or not event['active']:
+    if event['kind'] != 'water' or not event['active'] or event['outcome'] not in ('leak_fixed','Sizish tasdiqlandi','leak_confirmed'):
         return
     apt = event['apartment']
     set_mode(sim,apt,'normal')

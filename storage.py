@@ -1,6 +1,6 @@
 """SQLite incident archive. No model binaries or telemetry frames are serialized."""
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import json
 import os
@@ -100,6 +100,11 @@ def save_simulation(sim,path=None):
         db.execute('INSERT OR IGNORE INTO runs VALUES(?,?,?)',
                    (run_id,'live' if sim.get('live') else 'demo',created))
         for event in sim['events']:
+            if 'started_at' not in event:
+                # Demo timestamps use the same virtual date as its chart.
+                origin = sim.get('origin') if sim.get('live') else datetime(2026,1,1)
+                if origin is not None:
+                    event['started_at'] = (origin+timedelta(minutes=event['start'])).isoformat()
             row = db.execute('SELECT payload FROM incidents WHERE run_id=? AND local_id=?',
                              (run_id,event['id'])).fetchone()
             merged = dict(event)
@@ -171,7 +176,7 @@ def update_saved_incident(run_id,local_id,action,outcome='',note='',path=None):
         if action=='ack' and event['status']=='new':
             event['status'] = 'ack'
         elif action=='resolve' and event['status'] in ('new','ack') and outcome:
-            event.update(status='resolved',outcome=outcome,note=note[:1000])
+            event.update(status='ack' if event['kind']=='water' and outcome=='unknown' else 'resolved',outcome=outcome,note=note[:1000])
         else:
             raise ValueError('Invalid incident transition')
         # active is the last known signal state, not a live measurement.

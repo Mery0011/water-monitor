@@ -352,6 +352,67 @@ class EngineTests(unittest.TestCase):
         advance(sim,BUNDLE,120)
         self.assertEqual(len([e for e in sim['events'] if e['apartment']=='03']),2)
 
+    def test_inspection_outcomes_do_not_claim_unknown_or_normal_flow_is_fixed(self):
+        for outcome in ['unknown','normal_usage','leak_fixed']:
+            with self.subTest(outcome=outcome):
+                sim = new_simulation()
+                set_mode(sim,'03','leak'); advance(sim,BUNDLE,30)
+                event = next(e for e in sim['events'] if e['apartment']=='03')
+                flow = sim['last_snapshot']['03']['flow']
+                update_event(sim,event['id'],'resolve',outcome,'Inspection note')
+                save_simulation(sim)
+                saved = next(e for e in load_incidents() if e['run_id']==sim['_run_id'])
+                self.assertEqual(saved['status'],'ack' if outcome=='unknown' else 'resolved')
+                self.assertEqual(saved['note'],'Inspection note')
+                if outcome=='leak_fixed':
+                    self.assertEqual(sim['last_snapshot']['03']['flow'],0)
+                else:
+                    self.assertEqual(sim['last_snapshot']['03']['flow'],flow)
+                    advance(sim,BUNDLE,5)
+                    self.assertEqual(len(sim['events']),1)
+                    self.assertEqual(sim['modes']['03'],'leak')
+                if outcome=='unknown':
+                    update_saved_incident(sim['_run_id'],event['id'],'resolve','unknown','Still checking')
+                    self.assertEqual(next(e for e in load_incidents() if e['run_id']==sim['_run_id'])['status'],'ack')
+                    update_saved_incident(sim['_run_id'],event['id'],'resolve','leak_fixed','Repaired')
+                    self.assertEqual(next(e for e in load_incidents() if e['run_id']==sim['_run_id'])['status'],'resolved')
+
+    def test_ui_unknown_stays_pending_then_normal_usage_closes_without_stopping_flow(self):
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        app.radio[0].set_value('demo').run()
+        app.button(key='scenario_leak').click().run()
+        app.button(key='step').click().run(); app.button(key='step').click().run()
+        app.selectbox(key='out_1').set_value('unknown').run()
+        app.text_input(key='note_1').input('Need owner confirmation').run()
+        self.assertEqual(app.button(key='done_1').label,'Save inspection')
+        app.button(key='done_1').click().run()
+        event = app.session_state['simulation']['events'][0]
+        self.assertEqual(event['status'],'ack')
+        self.assertEqual(event['note'],'Need owner confirmation')
+        self.assertTrue(any(x.value=='Inspection in progress' for x in app.caption))
+        app.selectbox(key='out_1').set_value('normal_usage').run()
+        flow = app.session_state['simulation']['last_snapshot']['03']['flow']
+        app.button(key='done_1').click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(event['status'],'resolved')
+        self.assertEqual(app.session_state['simulation']['last_snapshot']['03']['flow'],flow)
+        self.assertEqual(next(m.value for m in app.metric if m.label=='Water inspections'),'0')
+
+    def test_incident_start_date_survives_midnight_and_restart(self):
+        now = datetime(2026,11,25,23,59,tzinfo=LOCAL_TZ)
+        sim = new_live(now)
+        sync_live(sim,BUNDLE,now=now)
+        change_scenario(sim,BUNDLE,'03','offline',now=now)
+        save_simulation(sim)
+        first = load_incidents()[0]['started_at']
+        self.assertEqual(datetime.fromisoformat(first),now)
+        sync_live(sim,BUNDLE,now=now+timedelta(minutes=2))
+        save_simulation(sim)
+        self.assertEqual(load_incidents()[0]['started_at'],first)
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        tables = [x.value for x in app.dataframe if 'Session' in x.value.columns]
+        self.assertEqual(tables[0].iloc[0]['Started'],'2026-11-25 23:59')
+
     def test_short_shower_does_not_alert(self):
         sim = new_simulation()
         set_mode(sim,'01','shower')
@@ -452,6 +513,20 @@ class EngineTests(unittest.TestCase):
             self.assertFalse(app.exception)
             self.assertEqual(app.tabs[1].label,title)
 
+    def test_single_incident_history_keeps_records_after_reset_and_reopen(self):
+        app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        app.radio[0].set_value('demo').run()
+        app.button(key='scenario_offline').click().run()
+        self.assertEqual(sum(x.label=='Incident history' for x in app.expander),1)
+        self.assertFalse(any(x.label in ('Incident history and report','Saved history — all sessions') for x in app.expander))
+        app.button(key='reset').click().run()
+        reopened = AppTest.from_file(str(ROOT/'app.py'),default_timeout=30).run()
+        self.assertFalse(reopened.exception)
+        tables = [x.value for x in reopened.dataframe if 'Session' in x.value.columns]
+        self.assertEqual(len(tables),1)
+        self.assertEqual(len(tables[0]),1)
+        self.assertEqual(tables[0].iloc[0]['Apartment'],'03')
+
     def test_offline_and_recovery(self):
         sim = new_simulation()
         set_mode(sim,'02','offline'); advance(sim,BUNDLE,15)
@@ -496,6 +571,9 @@ class EngineTests(unittest.TestCase):
         app.selectbox(key='alert_page').set_value(1).run()
         self.assertEqual(app.text_input(key='note_1').value,'Keep this draft when changing pages')
         self.assertEqual(app.selectbox(key='out_1').value,'unknown')
+        app.button(key='done_1').click().run()
+        self.assertEqual(sim['events'][0]['status'],'ack')
+        app.selectbox(key='out_1').set_value('leak_fixed').run()
         app.button(key='done_1').click().run()
         self.assertEqual(sim['events'][0]['status'],'resolved')
         # Shrinking the list while on the last page must not leave an invalid page.

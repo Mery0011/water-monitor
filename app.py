@@ -155,6 +155,15 @@ def owner_contact(apartment,key,event=None,editable=False):
                         st.rerun()
 
 
+def incident_start_label(event):
+    if event.get('started_at'):
+        started = datetime.fromisoformat(event['started_at'])
+        if started.tzinfo is not None:
+            started = started.astimezone(LOCAL_TZ)
+        return started.strftime('%Y-%m-%d %H:%M')
+    return t('Date unavailable')+' • '+clock_label(event['start'])
+
+
 def explain_incident(event):
     st.markdown('**'+t('Why this alert?')+'**')
     if event['kind'] == 'offline':
@@ -206,7 +215,8 @@ def monitor():
         st.warning(t('Another window updated this incident. The saved result and notes were kept; your conflicting update was not applied.'))
     snap = sim['last_snapshot']
     offline = sum(s['offline'] for s in snap.values())
-    active_water = {a for a,k in sim['open_events'] if k=='water'}
+    active_water = {e['apartment'] for e in sim['events']
+                    if e['kind']=='water' and e['active'] and e['status']!='resolved'}
     pending = [e for e in sim['events'] if e['status']!='resolved']
     a,b,c,d = st.columns(4)
     a.metric(t('Apartments'),len(APARTMENTS))
@@ -284,7 +294,7 @@ def monitor():
             with st.container(border=True):
                 st.markdown(f"**#{event['id']} • "+t('Apartment {apt}',apt=event['apartment'])+'**')
                 st.warning(t('Offline' if event['kind']=='offline' else 'Possible water leak'))
-                st.caption(t('Started: {time} • {status}',time=clock_label(event['start']),
+                st.caption(t('Started: {time} • {status}',time=incident_start_label(event),
                     status=t('Signal ongoing' if event['active'] else 'Signal ended; inspection pending')))
                 explain_incident(event)
                 owner_contact(event['apartment'],f"contact_{event['id']}",event=event)
@@ -292,10 +302,10 @@ def monitor():
                     if st.button(t('Acknowledge'),key=f"ack_{event['id']}",width='stretch'):
                         if live: sync_live(sim,bundle,force=True)
                         update_event(sim,event['id'],'ack'); persist_current(); st.rerun()
-                else: st.caption(t('✓ Acknowledged by security — inspection needed'))
+                else: st.caption(t('Inspection in progress' if event['outcome']=='unknown' else '✓ Acknowledged by security — inspection needed'))
                 with st.expander(t('Complete inspection')):
                     if event['kind']=='water':
-                        st.caption(t('In this demo, Resolve also stops the simulated leak and restores normal flow. It does not control a real valve.'))
+                        st.caption(t('Leak fixed stops the simulated leak. Normal usage completes inspection without stopping flow. Cause unknown keeps inspection open.'))
                     else:
                         st.caption(t('Connection restored reconnects this demo sensor immediately. Device inspection required leaves it offline.'))
                     options = ['leak_fixed','normal_usage','unknown'] if event['kind']=='water' else ['connection_restored','device_check']
@@ -310,42 +320,14 @@ def monitor():
                     note_key = f"note_{event['id']}"
                     note = st.text_input(t('Staff note'),key=note_key,max_chars=1000,value=draft.get('note',''),
                         on_change=remember_inspection_draft,args=(event['id'],'note',note_key))
-                    if st.button(t('Resolve'),key=f"done_{event['id']}"):
+                    if st.button(t('Save inspection' if outcome=='unknown' else 'Resolve'),key=f"done_{event['id']}"):
                         if live: sync_live(sim,bundle,force=True)
                         update_event(sim,event['id'],'resolve',outcome,note); persist_current(); st.rerun()
         new_ids = {e['id'] for e in pending if e['status']=='new'}
         played = st.session_state.setdefault('played_events',set())
         if sound and new_ids-played: st.audio(alarm(),format='audio/wav',autoplay=True)
         st.session_state['played_events'] = played|new_ids
-    with st.expander(t('Incident history and report')):
-        records = [{t('ID'):e['id'],t('Apartment'):e['apartment'],
-            t('Type'):t('Offline' if e['kind']=='offline' else 'Possible water leak'),
-            t('Started'):clock_label(e['start']),t('Status'):t(STATUSES[e['status']]),
-            t('Signal active'):t('Signal ongoing' if e['active'] else 'Quiet'),
-            t('Outcome'):outcome_label(e['outcome']),t('Note'):e['note']} for e in sim['events']]
-        if records:
-            table = pd.DataFrame(records)
-            st.dataframe(table,hide_index=True,width='stretch')
-            st.download_button(t('Download incidents as CSV'),table.to_csv(index=False).encode('utf-8-sig'),
-                'water-incidents.csv','text/csv',key='download_incidents')
-        else: st.write(t('No incidents yet.'))
-        # Derive translated activity from structured state, never translate staff notes.
-        activity = []
-        for h in sim['history']:
-            if h.get('type')=='scenario':
-                action = t('Scenario')+': '+t(SCENARIOS[h['mode']])
-            elif h.get('type')=='event':
-                action = f"#{h['event_id']}: "+t('Acknowledged' if h['action']=='ack' else 'Resolved')
-                if h.get('outcome'): action += ' — '+outcome_label(h['outcome'])
-                if h.get('note'): action += ' — '+h['note']
-            else:
-                continue
-            activity.append({t('Time'):h['time'],t('Apartment'):h['apartment'],t('Action'):action})
-        if activity: st.dataframe(pd.DataFrame(activity),hide_index=True)
-        st.caption(t('Incident history is saved to a local SQLite database. Reset starts a new session without deleting saved records.'))
-
-
-    with st.expander(t('Saved history — all sessions')):
+    with st.expander(t('Incident history')):
         st.caption(t('Saved incidents remain after restarting the app. Previous sessions contain historical signals, not current sensor readings.'))
         try:
             saved = load_incidents()
@@ -355,7 +337,7 @@ def monitor():
         records = [{t('Session'):e['run_id'][:8],t('ID'):e['id'],t('Apartment'):e['apartment'],
             t('Mode'):t('Live time' if e['run_mode']=='live' else 'Accelerated demo'),
             t('Type'):t('Offline' if e['kind']=='offline' else 'Possible water leak'),
-            t('Started'):clock_label(e['start']),t('Status'):t(STATUSES[e['status']]),
+            t('Started'):incident_start_label(e),t('Status'):t(STATUSES[e['status']]),
             t('Outcome'):outcome_label(e['outcome']),t('Note'):e['note'],
             t('Last saved'):datetime.fromisoformat(e['updated_at']).astimezone(LOCAL_TZ).strftime('%Y-%m-%d %H:%M:%S')}
             for e in saved]
@@ -386,7 +368,7 @@ def monitor():
             options = ['leak_fixed','normal_usage','unknown'] if event['kind']=='water' else ['connection_restored','device_check']
             outcome = st.selectbox(t('Outcome'),options,format_func=outcome_label,key=prefix+'_outcome')
             note = st.text_input(t('Staff note'),value=event['note'],max_chars=1000,key=prefix+'_note')
-            if st.button(t('Resolve'),key=prefix+'_resolve'):
+            if st.button(t('Save inspection' if outcome=='unknown' else 'Resolve'),key=prefix+'_resolve'):
                 try:
                     update_saved_incident(event['run_id'],event['id'],'resolve',outcome,note)
                 except (OSError,sqlite3.Error,ValueError):
